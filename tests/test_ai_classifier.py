@@ -1,4 +1,3 @@
-
 import json
 
 import pytest
@@ -147,11 +146,11 @@ def test_ai_extracts_failed_stage():
 
     log = """
 [Pipeline] Start of Pipeline
-10:49:30 [Pipeline] { (Checkout)
+[Pipeline] { (Checkout)
 [Pipeline] sh
 Checking out repository
 [Pipeline] }
-10:49:33 [Pipeline] { (Test)
+[Pipeline] { (Test)
 [Pipeline] sh
 pytest -q
 ============================= test session starts =============================
@@ -160,7 +159,7 @@ E       assert -1 == 5
 AssertionError
 script returned exit code 1
 [Pipeline] }
-10:50:02 [Pipeline] { (Docker Build)
+[Pipeline] { (Docker Build)
 docker build .
 [Pipeline] }
 [Pipeline] End of Pipeline
@@ -338,7 +337,7 @@ async def test_ai_classification_parses_real_ollama_response(
     )
 
     log = """
-10:49:33 [Pipeline] { (Test)
+[Pipeline] { (Test)
 pytest -q
 FAILED tests/test_calculator.py::test_add
 E       assert -1 == 5
@@ -481,7 +480,7 @@ async def test_ai_accepts_free_form_diagnostic_category(
 
     result = await classifier.classify(
         """
-10:49:33 [Pipeline] { (Test)
+[Pipeline] { (Test)
 pip install -r requirements.txt
 ERROR: No matching distribution found
 [Pipeline] }
@@ -509,3 +508,28 @@ def test_ai_classifier_reads_enabled_setting(monkeypatch):
     classifier = AIClassifier()
     assert classifier.enabled is True
     assert classifier.ollama_url == "http://ollama-test:11434"
+
+
+
+def test_ai_extracts_failed_stage_with_jenkins_timestamps():
+    """Real Jenkins console output may prefix Pipeline markers with timestamps."""
+    classifier = AIClassifier()
+    log = """\
+10:49:32  [Pipeline] { (Checkout)
+10:49:33  [Pipeline] echo
+10:49:34  [Pipeline] { (Test)
+10:49:35  [Pipeline] sh
+10:49:36  /venv/bin/python: No module named pytest
+10:49:37  script returned exit code 1
+10:49:38  [Pipeline] }
+10:49:39  [Pipeline] { (Docker Build)
+10:49:40  docker build .
+10:49:41  [Pipeline] }
+"""
+    prepared = classifier._prepare_log(
+        log,
+        rules_category="DEPENDENCY_FAILURE",
+    )
+    assert "Failed Jenkins stage: Test" in prepared
+    assert "No module named pytest" in prepared
+    assert "docker build ." not in prepared
