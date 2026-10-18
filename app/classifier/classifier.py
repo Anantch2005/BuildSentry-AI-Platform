@@ -22,7 +22,7 @@ class FailureClassifier:
                         "category": rule.category,
                         "action": rule.action,
                         "reason": rule.reason,
-                        "confidence": 1.0,
+                        "confidence": rule.confidence,
                         "matched_pattern": pattern,
                     }
 

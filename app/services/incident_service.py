@@ -1,4 +1,3 @@
-
 import logging
 import time
 import uuid
@@ -91,7 +90,7 @@ class IncidentService:
         # =========================================
 
         with tracer.start_as_current_span(
-            "buildsentry.collect_evidence"
+            "autoheal.collect_evidence"
         ) as span:
 
             span.set_attribute(
@@ -128,7 +127,7 @@ class IncidentService:
         # =========================================
 
         with tracer.start_as_current_span(
-            "buildsentry.classification.rules"
+            "autoheal.classification.rules"
         ) as span:
 
             classification_data = (
@@ -189,7 +188,7 @@ class IncidentService:
             self._log_lines("-" * 60)
 
             with tracer.start_as_current_span(
-                "buildsentry.ai_diagnosis"
+                "autoheal.ai_diagnosis"
             ) as span:
 
                 try:
@@ -350,7 +349,7 @@ class IncidentService:
                     )
 
                     # AI failure must NEVER change the
-                    # deterministic BuildSentry decision.
+                    # deterministic AutoHeal decision.
 
                     classification = (
                         classification.model_copy(
@@ -386,7 +385,7 @@ class IncidentService:
         # =========================================
 
         with tracer.start_as_current_span(
-            "buildsentry.persist_incident"
+            "autoheal.persist_incident"
         ):
             database_incident_id = (
                 self.repository.create_incident(
@@ -536,7 +535,7 @@ class IncidentService:
         # =========================================
 
         with tracer.start_as_current_span(
-            "buildsentry.policy.evaluate"
+            "autoheal.policy.evaluate"
         ) as span:
 
             policy = self.policy.evaluate(
@@ -744,7 +743,7 @@ class IncidentService:
         # =========================================
 
         with tracer.start_as_current_span(
-            "buildsentry.safety.circuit_breaker"
+            "autoheal.safety.circuit_breaker"
         ) as span:
 
             allowed = (
@@ -1020,7 +1019,7 @@ class IncidentService:
         )
 
         with tracer.start_as_current_span(
-            "buildsentry.remediation"
+            "autoheal.remediation"
         ) as span:
 
             span.set_attribute(
@@ -1217,7 +1216,7 @@ class IncidentService:
             )
 
         # =========================================
-        # 18. BUILDSENTRY RESULT SUMMARY
+        # 18. AUTOHEAL RESULT SUMMARY
         # =========================================
 
         self.reporter.record_result_summary(
@@ -1276,12 +1275,12 @@ class IncidentService:
         )
 
         with tracer.start_as_current_span(
-            "buildsentry.process_failure"
+            "autoheal.process_failure"
         ) as root_span:
 
             root_span.set_attribute(
                 "service.name",
-                "buildsentry",
+                "autoheal",
             )
 
             root_span.set_attribute(
@@ -1299,7 +1298,7 @@ class IncidentService:
             # =========================================
 
             with tracer.start_as_current_span(
-                "buildsentry.duplicate_check"
+                "autoheal.duplicate_check"
             ):
                 if self.repository.exists(
                     job_name,
@@ -1337,15 +1336,16 @@ class IncidentService:
 
             incident = Incident(
                 incident_id=(
-                    f"BS-{uuid.uuid4().hex[:8].upper()}"
+                    f"AH-{uuid.uuid4().hex[:8].upper()}"
                 ),
                 source="jenkins",
                 job_name=job_name,
                 build_number=build_number,
                 status=build.result or "UNKNOWN",
                 build_url=build.url,
-                # Store a bounded, redacted evidence excerpt instead of the full raw
-                # Jenkins console, which may contain credentials or internal details.
+                # Persist only bounded, redacted failure evidence. The full log
+                # remains in memory for deterministic classification and AI extraction,
+                # but is not written to PostgreSQL by default.
                 console_log=self.ai_classifier._prepare_log(
                     log,
                     rules_category=classification.category,

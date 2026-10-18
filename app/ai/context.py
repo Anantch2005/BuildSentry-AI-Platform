@@ -1,4 +1,3 @@
-
 """Focused extraction and redaction of Jenkins failure evidence for AI diagnostics.
 
 This module only selects diagnostic context. It contains no remediation or policy logic.
@@ -277,8 +276,11 @@ class FailureContextExtractor:
         ),
     }
 
+    # Jenkins console lines may be plain, time-prefixed, or ISO-timestamped.
+    # Accept those prefixes so stage scoping works with real console output.
     STAGE_PATTERN = re.compile(
-        r"^\s*(?:\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+)?\[Pipeline\]\s+\{\s+\((?P<stage>.+?)\)\s*$"
+        r"^\s*(?:(?:\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?|\[[^\]\r\n]+\])\s+)?"
+        r"\[Pipeline\]\s+\{\s+\((?P<stage>.+?)\)\s*$"
     )
 
     def _prepare_log(
@@ -435,7 +437,7 @@ class FailureContextExtractor:
             "",
             (
                 "The complete Jenkins console was "
-                "analyzed locally by BuildSentry."
+                "analyzed locally by AutoHeal."
             ),
             (
                 "Only deterministic, failure-focused "

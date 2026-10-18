@@ -7,10 +7,11 @@
   "schemaVersion": 39,
   "style": "dark",
   "tags": [
-    "autoheal",
-    "reliability",
-    "ai",
-    "cicd"
+    "buildsentry",
+    "jenkins",
+    "incidents",
+    "recovery",
+    "ai"
   ],
   "templating": {
     "list": []
@@ -21,22 +22,44 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "AutoHeal Reliability & AI Dashboard",
-  "uid": "autoheal",
-  "version": 4,
+  "title": "BuildSentry | Incident Command Center",
+  "uid": "buildsentry",
+  "version": 5,
   "panels": [
+    {
+      "id": 100,
+      "type": "text",
+      "title": "",
+      "description": "BuildSentry incident overview",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"padding:18px 22px;border-radius:12px;background:linear-gradient(110deg,#101d3a 0%,#163a67 48%,#3b1d62 100%);border:1px solid #2f5689;color:#f8fafc;\">\n<div style=\"font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;font-weight:700;\">CI/CD INCIDENT INTELLIGENCE</div>\n<div style=\"font-size:30px;font-weight:800;line-height:1.25;margin-top:5px;\">BuildSentry <span style=\"color:#67e8f9;\">\u25cf</span></div>\n<div style=\"font-size:14px;color:#dbeafe;margin-top:5px;\">Jenkins failure detection \u00b7 AI diagnosis \u00b7 policy-controlled recovery</div>\n</div>"
+      },
+      "transparent": true
+    },
     {
       "type": "stat",
       "title": "Total Incidents",
       "gridPos": {
-        "h": 4,
-        "w": 4,
         "x": 0,
-        "y": 0
+        "y": 3,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -53,21 +76,44 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "id": 1,
+      "collapsed": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#38bdf8"
+          },
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "description": "All incidents recorded in the selected time range.",
+      "transparent": true
     },
     {
       "type": "stat",
       "title": "Healed Incidents",
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 0
+        "x": 6,
+        "y": 3,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -84,21 +130,44 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "id": 2,
+      "collapsed": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#22c55e"
+          },
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "description": "Incidents with a recorded remediation-success event; confirm the final Jenkins result.",
+      "transparent": true
     },
     {
       "type": "stat",
       "title": "Healing Rate",
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 0
+        "x": 12,
+        "y": 3,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -109,9 +178,17 @@
       ],
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#06b6d4"
+          },
+          "custom": {},
           "unit": "percent",
-          "decimals": 2
-        }
+          "decimals": 1,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
       },
       "options": {
         "reduceOptions": {
@@ -121,21 +198,34 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "id": 3,
+      "collapsed": false,
+      "description": "Percentage of recorded incidents with a successful remediation event.",
+      "transparent": true
     },
     {
       "type": "stat",
       "title": "Escalated Incidents",
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 0
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -152,122 +242,44 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Policy Denials",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 0
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
       },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawSql": "SELECT COUNT(DISTINCT incident_id)::double precision AS value FROM audit_events WHERE event_type = 'POLICY_DENIED' AND $__timeFilter(created_at);"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      }
-    },
-    {
-      "type": "stat",
-      "title": "AI Analyses",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawSql": "SELECT COUNT(*)::double precision AS value FROM incidents WHERE ai_root_cause IS NOT NULL AND $__timeFilter(created_at);"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      }
-    },
-    {
-      "type": "stat",
-      "title": "AI Avg Confidence",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 4
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawSql": "SELECT AVG(ai_confidence)::double precision AS value FROM incidents WHERE ai_confidence IS NOT NULL AND $__timeFilter(created_at);"
-        }
-      ],
+      "id": 4,
+      "collapsed": false,
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "decimals": 3,
-          "min": 0,
-          "max": 1
-        }
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#fb7185"
+          },
+          "custom": {}
         },
-        "textMode": "auto"
-      }
+        "overrides": []
+      },
+      "description": "Incidents recorded as escalated.",
+      "transparent": true
     },
     {
       "type": "stat",
       "title": "Remediation Attempts",
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 4
+        "x": 0,
+        "y": 7,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -284,21 +296,44 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "id": 8,
+      "collapsed": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#818cf8"
+          },
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "description": "Recorded remediation attempts.",
+      "transparent": true
     },
     {
       "type": "stat",
       "title": "Remediation Success",
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 4
+        "x": 6,
+        "y": 7,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -315,21 +350,44 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "id": 9,
+      "collapsed": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#4ade80"
+          },
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "description": "Remediation attempts recorded as successful.",
+      "transparent": true
     },
     {
       "type": "stat",
       "title": "Remediation Failures",
       "gridPos": {
-        "h": 4,
-        "w": 4,
         "x": 12,
-        "y": 4
+        "y": 7,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -346,35 +404,52 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
+      },
+      "id": 10,
+      "collapsed": false,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#f87171"
+          },
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "description": "Remediation attempts recorded as failed.",
+      "transparent": true
     },
     {
       "type": "stat",
-      "title": "p95 Incident Processing (s)",
+      "title": "Policy Denials",
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 4
+        "x": 18,
+        "y": 7,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "WITH durations AS ( SELECT i.id, EXTRACT(EPOCH FROM (r.created_at - i.created_at)) AS duration_seconds FROM incidents i JOIN LATERAL ( SELECT ae.created_at FROM audit_events ae WHERE ae.incident_id = i.id AND ae.event_type = 'AUTOHEAL_RESULT' ORDER BY ae.created_at DESC LIMIT 1 ) r ON TRUE WHERE $__timeFilter(i.created_at) ) SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_seconds)::double precision AS value FROM durations;"
+          "rawSql": "SELECT COUNT(DISTINCT incident_id)::double precision AS value FROM audit_events WHERE event_type = 'POLICY_DENIED' AND $__timeFilter(created_at);"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "decimals": 2
-        }
-      },
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -383,58 +458,65 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
-      }
-    },
-    {
-      "type": "stat",
-      "title": "AI Usage %",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 4
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": false
       },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawSql": "SELECT COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE ai_root_cause IS NOT NULL) / NULLIF(COUNT(*), 0), 2), 0)::double precision AS value FROM incidents WHERE $__timeFilter(created_at);"
-        }
-      ],
+      "id": 5,
+      "collapsed": false,
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "decimals": 2
-        }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#fbbf24"
+          },
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "description": "Incidents where policy denied the requested action.",
+      "transparent": true
+    },
+    {
+      "id": 101,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 2
       },
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      }
+        "mode": "markdown",
+        "content": "## Activity & failure patterns\nSee incident volume, remediation outcomes, and the categories driving failures.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
+      },
+      "transparent": true
     },
     {
       "type": "timeseries",
       "title": "Incidents Over Time",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 8
+        "y": 13,
+        "w": 8,
+        "h": 8
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -448,22 +530,44 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
         }
-      }
+      },
+      "id": 14,
+      "collapsed": false,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "lineWidth": 2,
+        "fillOpacity": 18,
+        "showPoints": "never",
+        "spanNulls": false
+      },
+      "transparent": true,
+      "description": "Number of incidents recorded over time."
     },
     {
       "type": "timeseries",
       "title": "Remediation Outcomes",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 8,
+        "y": 13,
+        "w": 8,
+        "h": 8
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -477,22 +581,44 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
         }
-      }
+      },
+      "id": 15,
+      "collapsed": false,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "lineWidth": 2,
+        "fillOpacity": 18,
+        "showPoints": "never",
+        "spanNulls": false
+      },
+      "transparent": true,
+      "description": "Recorded remediation successes and failures over time."
     },
     {
       "type": "timeseries",
       "title": "Failure Categories",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
+        "x": 16,
+        "y": 13,
+        "w": 8,
+        "h": 8
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -506,111 +632,65 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "decimals": 0
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
         }
-      }
+      },
+      "id": 16,
+      "collapsed": false,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "lineWidth": 2,
+        "fillOpacity": 18,
+        "showPoints": "never",
+        "spanNulls": false
+      },
+      "transparent": true,
+      "description": "Which failure categories appear most often."
     },
     {
-      "type": "timeseries",
-      "title": "Policy Decisions by Category",
+      "id": 102,
+      "type": "text",
+      "title": "",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, failure_category AS category, COUNT(*)::double precision AS decisions FROM incidents WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1;",
-          "timeColumn": "time",
-          "timeFormat": "YYYY-MM-DD HH24:MI:SS"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0
-        }
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Incident Processing p50 / p95",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 24
+        "y": 21,
+        "w": 24,
+        "h": 2
       },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
+      "options": {
+        "mode": "markdown",
+        "content": "## Investigate an incident\nStart with the incident list, then review the AI diagnosis and evidence. The diagnosis is advisory, not remediation authorization.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
       },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "time_series",
-          "rawSql": "WITH durations AS ( SELECT date_trunc('hour', i.created_at) AS time, EXTRACT(EPOCH FROM (r.created_at - i.created_at)) AS duration_seconds FROM incidents i JOIN LATERAL ( SELECT ae.created_at FROM audit_events ae WHERE ae.incident_id = i.id AND ae.event_type = 'AUTOHEAL_RESULT' ORDER BY ae.created_at DESC LIMIT 1 ) r ON TRUE WHERE $__timeFilter(i.created_at) ) SELECT time, percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_seconds)::double precision AS p50, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_seconds)::double precision AS p95 FROM durations GROUP BY 1 ORDER BY 1;",
-          "timeColumn": "time",
-          "timeFormat": "YYYY-MM-DD HH24:MI:SS"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "decimals": 2
-        }
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "AI Confidence Trend",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, AVG(ai_confidence)::double precision AS confidence FROM incidents WHERE ai_confidence IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;",
-          "timeColumn": "time",
-          "timeFormat": "YYYY-MM-DD HH24:MI:SS"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "decimals": 3,
-          "min": 0,
-          "max": 1
-        }
-      }
+      "transparent": true
     },
     {
       "type": "table",
-      "title": "Recent AutoHeal Incidents",
+      "title": "Recent BuildSentry Incidents",
       "gridPos": {
-        "h": 10,
-        "w": 24,
         "x": 0,
-        "y": 32
+        "y": 23,
+        "w": 24,
+        "h": 10
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -618,20 +698,32 @@
           "format": "table",
           "rawSql": "SELECT i.created_at AS \"time\", i.incident_id AS \"Incident\", i.job_name AS \"Job\", i.build_number AS \"Failed Build\", i.status AS \"Status\", i.failure_category AS \"Category\", i.failure_action AS \"Classifier Action\", i.classifier_source AS \"Classifier Source\", i.confidence AS \"Confidence\", ra.action AS \"Remediation Action\", ra.success AS \"Remediation Success\", ra.retry_build_number AS \"Retry Build\", ra.verification_result AS \"Verification\" FROM incidents i LEFT JOIN LATERAL ( SELECT * FROM remediation_attempts x WHERE x.incident_id = i.id ORDER BY x.id DESC LIMIT 1 ) ra ON TRUE WHERE $__timeFilter(i.created_at) ORDER BY i.created_at DESC LIMIT 25;"
         }
-      ]
+      ],
+      "id": 20,
+      "collapsed": false,
+      "transparent": true,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "description": "Use this table to investigate individual incidents; confirm recovery against the Jenkins build result."
     },
     {
       "type": "table",
-      "title": "AI Output — Diagnosis & Reasoning",
+      "title": "AI Output \u2014 Diagnosis & Reasoning",
       "gridPos": {
-        "h": 10,
-        "w": 24,
         "x": 0,
-        "y": 42
+        "y": 33,
+        "w": 24,
+        "h": 10
       },
       "datasource": {
         "type": "postgres",
-        "uid": "autoheal-postgres"
+        "uid": "buildsentry-postgres"
       },
       "targets": [
         {
@@ -639,49 +731,21 @@
           "format": "table",
           "rawSql": "SELECT i.created_at AS \"time\", i.incident_id AS \"Incident\", i.job_name AS \"Job\", i.build_number AS \"Failed Build\", i.failure_category AS \"Final Category\", i.classifier_source AS \"Decision Source\", i.ai_confidence AS \"AI Confidence\", i.ai_root_cause AS \"AI Root Cause\", i.ai_reasoning AS \"AI Reasoning\" FROM incidents i WHERE i.ai_root_cause IS NOT NULL AND $__timeFilter(i.created_at) ORDER BY i.created_at DESC LIMIT 20;"
         }
-      ]
-    },
-    {
-      "type": "table",
-      "title": "AutoHeal Result Summary",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 52
+      ],
+      "id": 21,
+      "collapsed": false,
+      "transparent": true,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
       },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawSql": "SELECT ae.created_at AS \"time\", i.incident_id AS \"Incident\", i.job_name AS \"Job\", i.build_number AS \"Build\", i.failure_category AS \"Category\", ae.event_type AS \"Event Type\", ae.message AS \"Message\" FROM audit_events ae JOIN incidents i ON i.id = ae.incident_id WHERE ae.event_type = 'AUTOHEAL_RESULT' AND $__timeFilter(ae.created_at) ORDER BY ae.created_at DESC LIMIT 25;"
-        }
-      ]
-    },
-    {
-      "type": "table",
-      "title": "AutoHeal Audit Trail",
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 62
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "autoheal-postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawSql": "SELECT ae.created_at AS \"time\", i.incident_id AS \"Incident\", i.job_name AS \"Job\", i.build_number AS \"Build\", ae.event_type AS \"Event\", ae.message AS \"Message\" FROM audit_events ae JOIN incidents i ON i.id = ae.incident_id WHERE $__timeFilter(ae.created_at) ORDER BY ae.created_at DESC LIMIT 40;"
-        }
-      ]
+      "description": "AI explanations are based on collected evidence and should not be treated as proof or permission to remediate."
     }
-  ]
+  ],
+  "description": "A focused dashboard for Jenkins incident detection, AI-assisted diagnosis, policy decisions, and controlled recovery.",
+  "id": null
 }
