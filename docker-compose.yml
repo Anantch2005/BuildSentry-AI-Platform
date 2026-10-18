@@ -2,7 +2,7 @@ services:
 
   postgres:
     image: postgres:16
-    container_name: buildsentry-postgres
+    container_name: autoheal-postgres
 
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -34,14 +34,13 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    container_name: buildsentry-ollama
+    container_name: autoheal-ollama
 
     ports:
       - "127.0.0.1:11434:11434"
 
     volumes:
       - ollama_data:/root/.ollama
-
 
     restart: unless-stopped
 
@@ -51,7 +50,7 @@ services:
 
   tempo:
     image: grafana/tempo:latest
-    container_name: buildsentry-tempo
+    container_name: autoheal-tempo
 
     command:
       - "-config.file=/etc/tempo.yaml"
@@ -71,7 +70,7 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector:0.158.0
-    container_name: buildsentry-otel
+    container_name: autoheal-otel
 
     command:
       - "--config=/etc/otelcol/config.yaml"
@@ -96,7 +95,7 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: buildsentry-prometheus
+    container_name: autoheal-prometheus
 
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -123,27 +122,22 @@ services:
 
   alertmanager:
     image: prom/alertmanager:latest
-    container_name: buildsentry-alertmanager
+    container_name: autoheal-alertmanager
 
-    entrypoint: ["/bin/sh", "-ec"]
-    command: >-
-      sed "s/__ALERTMANAGER_SECRET__/$${ALERTMANAGER_SECRET}/g"
-      /etc/alertmanager/alertmanager.yml.template > /tmp/alertmanager.yml
-      && exec /bin/alertmanager --config.file=/tmp/alertmanager.yml
-      --storage.path=/alertmanager
-
-    env_file:
-      - .env
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
 
     volumes:
-      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml.template:ro
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./.secrets/alertmanager_secret:/run/secrets/alertmanager_secret:ro
       - alertmanager_data:/alertmanager
 
     ports:
       - "127.0.0.1:9093:9093"
 
     depends_on:
-      buildsentry:
+      autoheal:
         condition: service_started
 
     restart: unless-stopped
@@ -154,13 +148,13 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: buildsentry-grafana
+    container_name: autoheal-grafana
 
     ports:
       - "127.0.0.1:3000:3000"
 
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?Set GRAFANA_ADMIN_USER in .env}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
 
       PG_HOST: postgres
@@ -191,10 +185,10 @@ services:
       - no-new-privileges:true
 
 
-  buildsentry:
+  autoheal:
     build: .
 
-    container_name: buildsentry
+    container_name: autoheal
 
     ports:
       - "127.0.0.1:8000:8000"

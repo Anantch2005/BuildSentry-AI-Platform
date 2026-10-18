@@ -1,13 +1,3 @@
-"""
-Legacy, unused telemetry implementation retained for migration reference.
-
-The running application imports `app.observability.telemetry`; do not add new
-metrics or instrumentation here. This duplicate module is not loaded by the app.
-"""
-
-
-import logging
-
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
@@ -28,8 +18,8 @@ from opentelemetry.sdk.trace.export import (
 from app.config import settings
 
 
-SERVICE_NAME = "buildsentry"
-SERVICE_VERSION = "0.8.0"
+SERVICE_NAME = "autoheal"
+SERVICE_VERSION = "0.6.0"
 
 
 resource = Resource.create(
@@ -48,25 +38,22 @@ trace_provider = TracerProvider(
     resource=resource,
 )
 
+trace_exporter = OTLPSpanExporter(
+    endpoint=(
+        f"{settings.otel_endpoint.rstrip('/')}"
+        "/v1/traces"
+    ),
+)
+
 if settings.otel_enabled:
-    trace_exporter = OTLPSpanExporter(
-        endpoint=(
-            f"{settings.otel_endpoint.rstrip('/')}"
-            "/v1/traces"
-        ),
-    )
-    trace_provider.add_span_processor(BatchSpanProcessor(trace_exporter))
-else:
-    # Tests/local offline runs can disable network exporters while retaining
-    # spans and metrics as no-op/in-process instrumentation.
-    logging.getLogger(__name__).info(
-        "OpenTelemetry export disabled by OTEL_ENABLED=false"
+    trace_provider.add_span_processor(
+        BatchSpanProcessor(trace_exporter)
     )
 
 trace.set_tracer_provider(trace_provider)
 
 tracer = trace.get_tracer(
-    "buildsentry",
+    "autoheal",
     SERVICE_VERSION,
 )
 
@@ -75,14 +62,15 @@ tracer = trace.get_tracer(
 # METRICS
 # =========================================================
 
+metric_exporter = OTLPMetricExporter(
+    endpoint=(
+        f"{settings.otel_endpoint.rstrip('/')}"
+        "/v1/metrics"
+    ),
+)
+
 metric_readers = []
 if settings.otel_enabled:
-    metric_exporter = OTLPMetricExporter(
-        endpoint=(
-            f"{settings.otel_endpoint.rstrip('/')}"
-            "/v1/metrics"
-        ),
-    )
     metric_readers.append(
         PeriodicExportingMetricReader(
             metric_exporter,
@@ -95,10 +83,12 @@ meter_provider = MeterProvider(
     metric_readers=metric_readers,
 )
 
-metrics.set_meter_provider(meter_provider)
+metrics.set_meter_provider(
+    meter_provider
+)
 
 meter = metrics.get_meter(
-    "buildsentry",
+    "autoheal",
     SERVICE_VERSION,
 )
 
@@ -108,52 +98,52 @@ meter = metrics.get_meter(
 # =========================================================
 
 incidents_total = meter.create_counter(
-    "buildsentry_incidents_total",
+    "autoheal_incidents_total",
     description="Total Jenkins incidents received.",
 )
 
 ai_classifications_total = meter.create_counter(
-    "buildsentry_ai_classifications_total",
+    "autoheal_ai_classifications_total",
     description="Total incidents classified by local AI.",
 )
 
 policy_decisions_total = meter.create_counter(
-    "buildsentry_policy_decisions_total",
+    "autoheal_policy_decisions_total",
     description="Total policy decisions.",
 )
 
 policy_denials_total = meter.create_counter(
-    "buildsentry_policy_denials_total",
+    "autoheal_policy_denials_total",
     description="Total policy denials.",
 )
 
 remediation_attempts_total = meter.create_counter(
-    "buildsentry_remediation_attempts_total",
+    "autoheal_remediation_attempts_total",
     description="Total remediation attempts.",
 )
 
 remediation_success_total = meter.create_counter(
-    "buildsentry_remediation_success_total",
+    "autoheal_remediation_success_total",
     description="Successful remediation attempts.",
 )
 
 remediation_failure_total = meter.create_counter(
-    "buildsentry_remediation_failure_total",
+    "autoheal_remediation_failure_total",
     description="Failed remediation attempts.",
 )
 
 healed_total = meter.create_counter(
-    "buildsentry_healed_total",
+    "autoheal_healed_total",
     description="Total successfully healed incidents.",
 )
 
 escalated_total = meter.create_counter(
-    "buildsentry_escalated_total",
+    "autoheal_escalated_total",
     description="Total escalated incidents.",
 )
 
 processing_duration = meter.create_histogram(
-    "buildsentry_processing_duration_seconds",
+    "autoheal_processing_duration_seconds",
     description="Time spent processing incidents.",
     unit="s",
 )
