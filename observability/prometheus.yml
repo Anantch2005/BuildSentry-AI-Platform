@@ -1,77 +1,22 @@
-groups:
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
 
-  - name: buildsentry-alerts
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
-    interval: 15s
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
 
-    rules:
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
 
-      - alert: BuildSentryEscalation
-        expr: increase(buildsentry_escalated_total[5m]) > 0
-        for: 15s
-
-        labels:
-          severity: warning
-          service: buildsentry
-
-        annotations:
-          summary: "BuildSentry escalated an incident"
-          description: "BuildSentry escalated at least one incident during the last 5 minutes."
-
-
-      - alert: BuildSentryRemediationFailure
-        expr: increase(buildsentry_remediation_failure_total[5m]) > 0
-        for: 15s
-
-        labels:
-          severity: critical
-          service: buildsentry
-
-        annotations:
-          summary: "BuildSentry remediation failed"
-          description: "One or more automatic remediation attempts failed during the last 5 minutes."
-
-
-      - alert: BuildSentryPolicyDenial
-        expr: increase(buildsentry_policy_denials_total[5m]) > 0
-        for: 15s
-
-        labels:
-          severity: warning
-          service: buildsentry
-
-        annotations:
-          summary: "BuildSentry policy denied remediation"
-          description: "The policy engine denied at least one remediation attempt."
-
-
-      - alert: BuildSentryAIClassification
-        expr: increase(buildsentry_ai_classifications_total[5m]) > 0
-        for: 15s
-
-        labels:
-          severity: info
-          service: buildsentry
-
-        annotations:
-          summary: "BuildSentry used local AI classification"
-          description: "Ollama was used to classify at least one incident."
-
-
-      - alert: BuildSentryHighProcessingLatency
-        expr: |
-          histogram_quantile(
-            0.95,
-            sum(
-              rate(buildsentry_processing_duration_seconds_bucket[5m])
-            ) by (le)
-          ) > 120
-        for: 1m
-
-        labels:
-          severity: warning
-          service: buildsentry
-
-        annotations:
-          summary: "BuildSentry processing latency is high"
-          description: "The p95 BuildSentry processing latency exceeded 120 seconds."
+  # OpenTelemetry Collector exposes translated application metrics here.
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]

@@ -106,33 +106,39 @@ class JenkinsRemediator:
             "Timed out waiting for Jenkins queue item."
         )
 
+    async def get_build_details(
+        self,
+        job_name: str,
+        build_number: int,
+        timeout: int = 600,
+    ) -> dict:
+        """Wait for a build to finish and return its result and description."""
+        job_url = self._job_url(job_name)
+        url = f"{job_url}/{int(build_number)}/api/json?tree=number,result,building,description"
+        elapsed = 0
+
+        async with httpx.AsyncClient() as client:
+            while elapsed < timeout:
+                response = await client.get(url, auth=self.auth, timeout=20)
+                response.raise_for_status()
+                data = response.json()
+                if not data.get("building", False):
+                    return {
+                        "build_number": data.get("number", int(build_number)),
+                        "result": data.get("result") or "UNKNOWN",
+                        "description": data.get("description") or "",
+                    }
+                await asyncio.sleep(5)
+                elapsed += 5
+
+        raise TimeoutError(f"Build #{build_number} did not finish within the timeout.")
+
     async def get_build_result(
         self,
         job_name: str,
         build_number: int,
         timeout: int = 600,
     ) -> str:
-        job_url = self._job_url(job_name)
-        url = f"{job_url}/{int(build_number)}/api/json"
-        elapsed = 0
-
-        async with httpx.AsyncClient() as client:
-            while elapsed < timeout:
-                response = await client.get(
-                    url,
-                    auth=self.auth,
-                    timeout=20,
-                )
-                response.raise_for_status()
-                data = response.json()
-
-                if not data.get("building", False):
-                    return data.get("result") or "UNKNOWN"
-
-                await asyncio.sleep(5)
-                elapsed += 5
-
-        raise TimeoutError(
-            f"Build #{build_number} did not finish within the timeout."
-        )
-3
+        """Backward-compatible result-only helper."""
+        details = await self.get_build_details(job_name, build_number, timeout)
+        return details["result"]

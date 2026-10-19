@@ -6,10 +6,11 @@ from app.remediation.executor import RemediationExecutor
 
 class FakeJenkins:
 
-    def __init__(self, result="SUCCESS"):
+    def __init__(self, result="SUCCESS", action_applied=True):
         self.triggered = False
         self.parameters = None
         self.result = result
+        self.action_applied = action_applied
 
     async def trigger_build(
         self,
@@ -26,12 +27,12 @@ class FakeJenkins:
             "queue_url": "fake-queue",
         }
 
-    async def get_build_result(
-        self,
-        job_name,
-        build_number,
-    ):
+    async def get_build_details(self, job_name, build_number):
+        action = (self.parameters or {}).get("AUTOHEAL_ACTION", "")
+        marker = f"BuildSentry-Recovery:{action}:APPLIED" if self.action_applied else ""
+        return {"build_number": build_number, "result": self.result, "description": marker}
 
+    async def get_build_result(self, job_name, build_number):
         return self.result
 
 
@@ -281,3 +282,21 @@ def test_jenkins_job_url_encodes_folder_and_job_segments():
         f"{executor.jenkins.base_url}/job/Folder%20Name/job/job%20%231/job/feature"
     )
 
+
+
+@pytest.mark.asyncio
+async def test_successful_retry_without_action_marker_escalates():
+    executor = RemediationExecutor()
+    fake = FakeJenkins(result="SUCCESS", action_applied=False)
+    executor.jenkins = fake
+
+    result = await executor.execute(
+        job_name="prac",
+        category="DEPENDENCY_FAILURE",
+        action="CLEAN_DEPENDENCY_ENV_AND_RETRY",
+    )
+
+    assert result["success"] is False
+    assert result["action"] == "ESCALATE"
+    assert result["verification_result"] == "ACTION_NOT_CONFIRMED"
+    assert result["action_verified"] is False

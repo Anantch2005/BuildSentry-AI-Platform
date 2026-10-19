@@ -71,7 +71,16 @@ Stage  : ${stageName ?: 'unspecified'}
 
     applyBuildSentryAction(action)
 
-    echo "BuildSentry: action '${action}' completed. The pipeline must now verify recovery."
+    // The backend requires this Jenkins API-visible marker plus a SUCCESS result.
+    String marker = "BuildSentry-Recovery:${action}:APPLIED"
+    String existingDescription = currentBuild.description ?: ''
+    if (!existingDescription.contains(marker)) {
+        currentBuild.description = existingDescription
+            ? "${existingDescription} | ${marker}"
+            : marker
+    }
+
+    echo "BuildSentry: action '${action}' completed and execution marker recorded."
 }
 
 private String requiredStageFor(String action) {
@@ -230,7 +239,8 @@ private void remediateDockerCache() {
         '''
     )
 
-    echo 'BuildSentry: Docker preflight passed; no global cache cleanup was run.'
+    env.BUILDSENTRY_DOCKER_NO_CACHE = 'true'
+    echo 'BuildSentry: Docker preflight passed; Jenkinsfile must consume BUILDSENTRY_DOCKER_NO_CACHE for its scoped build.'
 }
 
 /**

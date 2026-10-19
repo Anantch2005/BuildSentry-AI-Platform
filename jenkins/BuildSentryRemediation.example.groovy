@@ -1,82 +1,86 @@
-
 @Library('BuildSentry') _
 
-/*
- * Minimal BuildSentry integration example.
- *
- * BuildSentry Shared Library contains ONLY buildsentry().
- *
- * Generic CI/CD steps belong to the separate Shared library.
- */
-
 pipeline {
-
     agent any
 
-
     options {
-
-        skipDefaultCheckout(
-            true
-        )
-
+        skipDefaultCheckout(true)
         timestamps()
     }
 
-
     parameters {
-
-        /*
-         * Internal parameter used only when BuildSentry
-         * triggers a retry build.
-         */
         string(
             name: 'AUTOHEAL_ACTION',
             defaultValue: '',
-            description: (
-                'Internal BuildSentry action. '
-                + 'Leave empty for normal builds.'
-            )
+            description: 'Internal BuildSentry action; leave empty for a normal build.'
+        )
+        booleanParam(
+            name: 'PUSH_IMAGE',
+            defaultValue: false,
+            description: 'Push the image only after configuring registry credentials.'
         )
     }
 
+    environment {
+        IMAGE_NAME = 'example/buildsentry-demo'
+    }
 
     stages {
-
         stage('Checkout') {
-
             steps {
-
-                script {
-
-                    buildsentry(stage: 'checkout')
-
-                    checkout scm
-                }
+                script { buildsentry(stage: 'checkout') }
+                checkout scm
             }
         }
 
-
-        stage('Build') {
-
+        stage('Test') {
             steps {
+                script { buildsentry(stage: 'test') }
+                sh '''
+                    set -eu
+                    if [ -f requirements.txt ]; then
+                        if [ -x .venv/bin/python ]; then
+                            .venv/bin/python -m pytest
+                        else
+                            python -m pytest
+                        fi
+                    elif [ -f package.json ]; then
+                        npm test
+                    else
+                        echo 'Add your project-specific test command here.'
+                    fi
+                '''
+            }
+        }
 
-                echo(
-                    'Normal application pipeline.'
-                )
+        stage('Docker Build') {
+            when { expression { fileExists('Dockerfile') } }
+            steps {
+                script { buildsentry(stage: 'docker') }
+                sh '''
+                    set -eu
+                    CACHE_FLAG=''
+                    if [ "${BUILDSENTRY_DOCKER_NO_CACHE:-false}" = 'true' ]; then
+                        CACHE_FLAG='--no-cache'
+                    fi
+                    docker build $CACHE_FLAG -t "$IMAGE_NAME:$BUILD_NUMBER" .
+                '''
+            }
+        }
+
+        stage('Docker Push') {
+            when { expression { fileExists('Dockerfile') && params.PUSH_IMAGE } }
+            steps {
+                script { buildsentry(stage: 'registry') }
+                echo 'Authenticate to your registry using Jenkins credentials before pushing.'
+                sh 'docker push "$IMAGE_NAME:$BUILD_NUMBER"'
             }
         }
     }
 
-
     post {
-
         failure {
-
-            script {
-
-                buildsentry()
-            }
+            script { buildsentry() }
         }
     }
 }

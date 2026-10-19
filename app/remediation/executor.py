@@ -328,14 +328,12 @@ class RemediationExecutor:
             }
 
 
-        try:
+        expected_action = (parameters or {}).get("AUTOHEAL_ACTION", "").strip()
 
-            result = await (
-                self.jenkins.get_build_result(
-                    job_name,
-                    new_build,
-                )
-            )
+        try:
+            details = await self.jenkins.get_build_details(job_name, new_build)
+            result = details.get("result", "UNKNOWN")
+            description = details.get("description", "")
 
         except Exception as exc:
 
@@ -351,17 +349,32 @@ class RemediationExecutor:
             }
 
 
-        if result == "SUCCESS":
-
+        action_marker = f"BuildSentry-Recovery:{expected_action}:APPLIED"
+        if result == "SUCCESS" and expected_action and action_marker in description:
             return {
                 "action": action,
                 "success": True,
-                "message": (
-                    "Remediation succeeded after "
-                    f"{reason}."
-                ),
+                "message": f"Recovery action {expected_action} was confirmed in Jenkins build #{new_build}; {reason} and retry succeeded.",
                 "new_build_number": new_build,
                 "verification_result": "SUCCESS",
+                "action_verified": True,
+                "verified_action": expected_action,
+                "queue_url": queue_url,
+            }
+
+        if result == "SUCCESS":
+            return {
+                "action": "ESCALATE",
+                "success": False,
+                "message": (
+                    f"Jenkins build #{new_build} passed, but BuildSentry could not verify "
+                    f"that recovery action '{expected_action or 'unknown'}' executed. "
+                    "Ensure the matching buildsentry(stage: ...) hook is present. "
+                    "The incident is not marked healed."
+                ),
+                "new_build_number": new_build,
+                "verification_result": "ACTION_NOT_CONFIRMED",
+                "action_verified": False,
                 "queue_url": queue_url,
             }
 
@@ -379,4 +392,3 @@ class RemediationExecutor:
             ),
             "queue_url": queue_url,
         }
-

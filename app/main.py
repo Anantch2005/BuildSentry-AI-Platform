@@ -21,14 +21,14 @@ create_tables()
 
 
 app = FastAPI(
-    title="AutoHeal",
+    title="BuildSentry",
 
     description=(
         "Guarded failure analysis and "
         "remediation for Jenkins pipelines."
     ),
 
-    version="0.8.0",
+    version="1.0.0",
 )
 
 
@@ -49,7 +49,7 @@ async def health():
             status_code=503,
             detail={
                 "status": "unhealthy",
-                "service": "autoheal",
+                "service": "buildsentry",
                 "database": "disconnected",
                 "observability": (
                     "enabled"
@@ -64,7 +64,7 @@ async def health():
 
     return {
         "status": "healthy",
-        "service": "autoheal",
+        "service": "buildsentry",
         "database": "connected",
         "observability": (
             "enabled"
@@ -88,11 +88,10 @@ app.include_router(
 )
 
 
-if FastAPIInstrumentor is not None:
+if settings.otel_enabled and FastAPIInstrumentor is not None:
     FastAPIInstrumentor.instrument_app(app)
-else:
+elif settings.otel_enabled:
     logger.warning(
         "FastAPI OpenTelemetry instrumentation is unavailable; HTTP spans are disabled. "
         "Install requirements.txt to enable request instrumentation."
     )
-
