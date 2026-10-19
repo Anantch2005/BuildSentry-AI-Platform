@@ -2,8 +2,6 @@
 
 **A policy-gated Jenkins failure analysis and recovery prototype.** BuildSentry combines deterministic failure classification, optional local AI-assisted diagnosis, explicit remediation policy, Jenkins recovery builds, PostgreSQL audit records, and an observability stack.
 
-> **Project status:** portfolio / learning prototype. The Python unit and integration tests run with external systems mocked. A successful live deployment still requires validation against your own Jenkins controller, agent labels/tools, Docker daemon, registry credentials, Ollama model, and observability containers. Do not describe this as production-ready or claim a universal healing rate.
-
 ## What it does
 
 1. A Jenkins pipeline sends a signed-by-shared-secret failure notification to `POST /webhook/jenkins`.
