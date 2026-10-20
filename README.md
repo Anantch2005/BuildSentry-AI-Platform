@@ -73,11 +73,8 @@ Policy Engine             Local Ollama diagnosis
 Clone the repository and enter the project directory:
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
-cd <YOUR_REPOSITORY_DIRECTORY>
+git clone https://github.com/Anantch2005/BuildSentry-AI-Platform.git
 ```
-
-Replace the placeholders with the actual repository URL and directory name.
 
 ### 2. Configure environment variables
 
@@ -386,59 +383,6 @@ docker compose down
 **Warning:** Avoid `docker compose down -v` unless you intentionally want to remove the project's named volumes. Removing volumes can permanently delete database records, Grafana state, and downloaded Ollama models.
 
 If you intentionally want a fresh Ollama model store, back up anything you need first, then remove only the verified Ollama volume and recreate the Ollama service. Do not remove the PostgreSQL or Grafana volumes just to reinstall a model.
-
-## Troubleshooting
-
-### Ollama is running, but `ollama list` is empty
-
-Download the model:
-
-```bash
-docker compose exec ollama ollama pull llama3.2:3b
-docker compose exec ollama ollama list
-```
-
-### BuildSentry cannot connect to Ollama
-
-Check that the services are running:
-
-```bash
-docker compose ps
-docker compose logs --tail=100 ollama
-docker compose logs --tail=100 buildsentry
-```
-
-Confirm that `.env` contains:
-
-```dotenv
-AI_ENABLED=true
-OLLAMA_URL=http://ollama:11434
-OLLAMA_MODEL=llama3.2:3b
-```
-
-Inside the Compose network, use the Ollama service name and container port. `localhost:11434` inside the BuildSentry container refers to the BuildSentry container itself, not the Ollama container.
-
-### Grafana's AI diagnosis panel shows no data
-
-Check the following:
-
-1. Confirm that the model is installed with `ollama list`.
-2. Confirm `AI_ENABLED=true` and the correct model name.
-3. Inspect BuildSentry and Ollama logs for AI request failures.
-4. Trigger a new controlled Jenkins failure after fixing the problem.
-5. Refresh the dashboard and inspect the saved incident record.
-
-Previously recorded incidents are not necessarily reprocessed automatically after the model becomes available. Also, a dashboard query that filters out incidents with a null AI root cause may hide useful error details.
-
-### A container keeps restarting
-
-Inspect its logs:
-
-```bash
-docker compose logs --tail=100
-```
-
-Review the failing service's configuration and health status before restarting or deleting volumes. For example, a restarting Tempo service is an observability issue that should be investigated separately from Ollama model installation.
 
 ## Security
 
