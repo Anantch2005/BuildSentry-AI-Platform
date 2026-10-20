@@ -1,159 +1,282 @@
-# BuildSentry AI Platform
+# BuildSentry — Guarded CI/CD Recovery and AI Diagnostics
 
-**A policy-gated Jenkins failure analysis and recovery prototype.** BuildSentry combines deterministic failure classification, optional local AI-assisted diagnosis, explicit remediation policy, Jenkins recovery builds, PostgreSQL audit records, and an observability stack.
+BuildSentry is a Jenkins incident-response platform that classifies failed builds, applies deterministic safety policies, optionally uses a local Ollama model to explain log evidence, and records the incident lifecycle for auditing and observability.
 
-## What it does
+## Features
 
-1. A Jenkins pipeline sends a signed-by-shared-secret failure notification to `POST /webhook/jenkins`.
-2. BuildSentry validates the secret, retrieves the failed build metadata and console log from Jenkins, and extracts bounded failure evidence.
-3. Deterministic rules select the failure category. Optional Ollama analysis provides additional diagnostic context; AI does **not** choose or authorize remediation.
-4. The policy engine permits only explicitly allowlisted, low-risk recovery actions. Unsupported, unknown, and unsafe failures are escalated.
-5. BuildSentry triggers a separate Jenkins build with an internal action parameter.
-6. The Jenkins Shared Library performs the configured action at its matching pipeline stage and writes an action-execution marker into the Jenkins build description only after the action returns successfully.
-7. BuildSentry marks an incident `HEALED` only when the retry result is `SUCCESS` **and** the expected action marker is present. A passing retry without the marker is escalated as `ACTION_NOT_CONFIRMED`.
-8. PostgreSQL stores incidents and audit events; Grafana, Prometheus, OpenTelemetry, Tempo, and Alertmanager provide observability. Slack notifications are optional.
+- Authenticated Jenkins failure notifications.
+- Jenkins build metadata and console-log collection.
+- Deterministic failure classification.
+- Bounded, redacted, stage-focused evidence sent to local Ollama.
+- Validation that AI evidence quotations occur in the supplied excerpt.
+- Confidence limits when the AI cannot establish a clear root cause.
+- Separate policy evaluation, guarded remediation, and recovery verification.
+- PostgreSQL incident history and audit records.
+- Prometheus metrics, Grafana dashboards, OpenTelemetry traces, Tempo, and authenticated Alertmanager notifications.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    A[Jenkins failed build] --> B[Authenticated webhook]
-    B --> C[Jenkins metadata and console collector]
-    C --> D[Deterministic classifier]
-    C --> E[Bounded failure evidence]
-    E --> F[Optional local Ollama diagnosis]
-    D --> G[Policy engine]
-    F -. advisory context only .-> H[(PostgreSQL incident and audit trail)]
-    G -->|Denied / unsafe| I[Escalate]
-    G -->|Allowlisted action| J[Jenkins recovery build]
-    J --> K[Shared Library action marker]
-    K --> L{Retry SUCCESS and marker present?}
-    L -->|Yes| M[HEALED]
-    L -->|No| I
-    I --> H
-    M --> H
-    H --> N[Grafana]
-    O[OpenTelemetry Collector] --> P[Prometheus]
-    O --> Q[Tempo]
-    P --> N
-    Q --> N
-    P --> R[Alertmanager]
-    R --> S[BuildSentry alert endpoint / optional Slack]
+```text
+Jenkins failed build
+        |
+        v
+Authenticated BuildSentry webhook
+        |
+        v
+Collect build metadata and console logs
+        |
+        +-----------------------+
+        |                       |
+        v                       v
+Deterministic rules       Focused log extractor
+        |                       |
+        v                       v
+Policy Engine             Local Ollama diagnosis
+        |                       |
+        +------------+----------+
+                     |
+                     v
+      Guarded remediation or escalation
+                     |
+                     v
+       Verification and PostgreSQL audit
+                     |
+                     v
+    Prometheus / Grafana / Tempo / alerts
 ```
 
-### Safety boundary
-
-- Deterministic classification and policy—not the language model—control recovery eligibility.
-- AI diagnosis is advisory. AI output cannot grant permission to remediate.
-- Recovery operations are allowlisted and limited to one recovery build per incident.
-- A retry being accepted by Jenkins is not success. The backend waits for a terminal result and verifies the action marker.
-- BuildSentry does not automatically rewrite application code, repair credentials, restart a broken Docker daemon, or perform unrestricted host cleanup.
-
-## Supported recovery policy
-
-| Failure category | Policy / action | Boundary |
-|---|---|---|
-| `FLAKY_TEST` | One controlled retry | A retry only; no test code is changed |
-| `NETWORK_FAILURE` | Bounded connectivity check and backoff, then retry | Does not change DNS, credentials, or registry settings |
-| `WORKSPACE_FAILURE` | Clean the job workspace and retry | Requires the checkout hook before `checkout scm` |
-| `DEPENDENCY_FAILURE` | Recreate a supported dependency environment from its manifest, then retry | Does not intentionally upgrade lockfiles or versions |
-| `DOCKER_FAILURE` | Docker daemon preflight and scoped `docker build --no-cache`, then retry | Jenkinsfile must consume `BUILDSENTRY_DOCKER_NO_CACHE`; no global cache prune |
-| `REGISTRY_FAILURE` | One controlled retry | Authentication failures should be classified/escalated separately |
-| `CODE_FAILURE` | Deny automatic remediation | Human fixes code/tests |
-| `UNKNOWN`, disk/resource/agent/authentication safety cases | Escalate | No automatic privileged repair |
-
-Exact signatures and eligibility are defined in `app/classifier/rules.py` and `app/policy/rules.py`. Review these files before adding new recovery behavior.
-
-## Technology
+## Technology stack
 
 - Python 3.12, FastAPI, Pydantic Settings
 - Jenkins REST API and Jenkins Shared Library (Groovy)
 - PostgreSQL and SQLAlchemy
-- Optional local Ollama model for diagnosis
-- Docker Compose
+- Ollama for optional local AI diagnostics
+- Docker Engine and Docker Compose
 - OpenTelemetry Collector, Prometheus, Grafana, Tempo, Alertmanager
-- pytest / pytest-asyncio
+- pytest and pytest-asyncio
 
-## Prerequisites
+## Requirements
 
-- Docker Engine and Docker Compose v2
-- Python 3.12 for local tests
-- A Jenkins controller reachable from the API container
-- A Jenkins API user/token with permission to read build metadata/console output and trigger builds
-- A Jenkins Secret Text credential named `autoheal-webhook-secret` whose value matches `WEBHOOK_SECRET` in `.env`
-- A Jenkins global Shared Library named `BuildSentry` pointing to this repository (or the directory containing `jenkins-shared-library/vars/buildsentry.groovy`)
-- A local Ollama model only if AI diagnosis is enabled
+- Docker Engine and Docker Compose v2.
+- Python 3.12 for local tests.
+- Git to clone the repository.
+- Sufficient disk space for Docker images, database storage, and the Ollama model. The `llama3.2:3b` model requires additional storage beyond the Ollama Docker image.
+- A Jenkins instance reachable from the BuildSentry container.
+- A Jenkins API user/token with permission to read build metadata and console output, and to trigger builds when recovery requires it.
+- A Jenkins Secret Text credential named `autoheal-webhook-secret`, matching `WEBHOOK_SECRET` in `.env`.
+- A Jenkins global Shared Library named `BuildSentry`, pointing to this repository's `jenkins-shared-library` directory.
 
 ## Quick start
 
-### 1. Configure secrets
+### 1. Clone the repository
+
+Clone the repository and enter the project directory:
+
+```bash
+git clone <YOUR_REPOSITORY_URL>
+cd <YOUR_REPOSITORY_DIRECTORY>
+```
+
+Replace the placeholders with the actual repository URL and directory name.
+
+### 2. Configure environment variables
+
+Create your local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`. Replace every `replace-with-...` value, set the Jenkins URL/username/API token, and keep `DATABASE_URL` consistent with `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. For the example connection URL, use a URL-safe password (for example, a hexadecimal random value) or URL-encode special characters in the URL.
+Edit `.env` before starting the stack.
 
-Generate unique URL-safe values with `openssl rand -hex 24` if OpenSSL is available. Do not reuse the example values and never commit `.env`.
+At a minimum, review the following settings and ensure they match your intended configuration:
 
-Create the ignored Alertmanager secret file from the configured value:
+```dotenv
+AI_ENABLED=true
+OLLAMA_URL=http://ollama:11434
+OLLAMA_MODEL=llama3.2:3b
+```
+
+Also configure the database credentials, webhook secret, and Grafana administrator password. Keep `DATABASE_URL` consistent with `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
+
+Use a strong, unique `GRAFANA_ADMIN_PASSWORD`. URL-encode special characters in database passwords if they appear in `DATABASE_URL`.
+
+Generate a webhook secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Put the generated value in `.env` as `WEBHOOK_SECRET`. Configure the same value in the Jenkins Secret Text credential named `autoheal-webhook-secret`.
+
+Create the local Alertmanager secret file:
 
 ```bash
 python scripts/setup-local-secrets.py
 ```
 
-The script writes `.secrets/alertmanager_secret` with restrictive permissions and does not print the secret. The file is git-ignored. Alertmanager uses it to authenticate requests to BuildSentry; the file must exist before Compose starts.
+This script creates `.secrets/alertmanager_secret` with restrictive permissions. The file should not be committed to Git.
 
-### 2. Start the stack
+**Security:** Never commit `.env`, `.secrets/`, API tokens, database passwords, or webhook URLs.
+
+### 3. Validate and start Docker Compose
+
+Validate the Compose configuration:
 
 ```bash
 docker compose config
+```
+
+Start the application and supporting services:
+
+```bash
 docker compose up --build -d
+```
+
+Check the services:
+
+```bash
 docker compose ps
 ```
 
-Check health and interfaces:
+The Compose project uses the BuildSentry naming convention, with containers such as `buildsentry`, `buildsentry-postgres`, `buildsentry-ollama`, and `buildsentry-grafana`.
 
-- API health: <http://localhost:8000/health>
-- Grafana: <http://localhost:3000>
-- Prometheus: <http://localhost:9090>
-- Alertmanager: <http://localhost:9093>
-- Tempo: <http://localhost:3200>
+Wait for services to initialize. Some services may take longer than others to become healthy.
 
-Use the Grafana username/password set in `.env`. The default username is `admin`; set a unique password before starting the stack.
+### 4. Install the Ollama model
 
-### 3. Pull the local AI model (optional)
+**Important: Starting the Ollama container does not automatically download the AI model.** The Ollama Docker image contains the Ollama runtime, while model weights are stored separately in the Ollama data volume.
 
-Compose starts Ollama but does not download model weights automatically:
+After the Compose stack is running, download the configured model:
 
 ```bash
-docker exec autoheal-ollama ollama pull llama3.2:3b
-docker exec autoheal-ollama ollama list
+docker compose exec ollama ollama pull llama3.2:3b
 ```
 
-Set `AI_ENABLED=true` and `OLLAMA_MODEL=llama3.2:3b` in `.env` to enable local AI diagnosis. If AI is disabled or unavailable, deterministic classification and policy remain authoritative. Ollama is configured for CPU by default. Optional NVIDIA support is available with:
+This step requires an internet connection and can take several minutes. The model is downloaded into Ollama's persistent storage.
+
+Verify that the model is installed:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+docker compose exec ollama ollama list
 ```
 
-The GPU override requires a working NVIDIA Container Toolkit/runtime and may fail on hosts without it.
+You should see `llama3.2:3b` in the output.
 
-### 4. Verify services
+Test the model:
 
 ```bash
-docker compose logs --tail=100 autoheal
-docker compose logs --tail=100 prometheus
-docker compose logs --tail=100 alertmanager
+docker compose exec ollama ollama run llama3.2:3b \
+  "Reply with: BuildSentry AI is working"
 ```
 
-Open Prometheus **Status → Targets** and verify that `otel-collector` is up. Open **Status → Rules** to confirm the AutoHeal alert rules loaded. Do not assume that syntactically valid YAML means a service started successfully.
+If you use a different model, replace `llama3.2:3b` in the commands and ensure `OLLAMA_MODEL` in `.env` matches the installed model name.
+
+Restart the application after changing its environment configuration:
+
+```bash
+docker compose up -d --force-recreate buildsentry
+```
+
+Verify the configuration loaded by the application:
+
+```bash
+docker compose exec buildsentry printenv AI_ENABLED OLLAMA_URL OLLAMA_MODEL
+```
+
+Expected values for the default setup:
+
+```text
+true
+http://ollama:11434
+llama3.2:3b
+```
+
+If AI is disabled or Ollama is unavailable, BuildSentry's deterministic classification and safety policy should remain authoritative. AI diagnostics are advisory and must not authorize remediation.
+
+**First-run checklist:**
+
+- [ ] Docker Compose services have started.
+- [ ] The BuildSentry API is healthy.
+- [ ] PostgreSQL is healthy.
+- [ ] Ollama is running.
+- [ ] `llama3.2:3b` appears in `ollama list`.
+- [ ] `AI_ENABLED=true` is configured.
+- [ ] The application can reach Ollama.
+
+> **Note for contributors:** With the current setup, the model pull is a separate first-run step. If automatic model installation is added to Docker Compose in the future, update this section to reflect that behavior.
+
+### 5. Open the services
+
+The Compose configuration binds application ports to localhost by default. The following endpoints are available when their corresponding ports are published by Compose:
+
+| Service | Local URL |
+|---|---|
+| BuildSentry API health | http://localhost:8000/health |
+| Grafana | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
+| Alertmanager | http://localhost:9093 |
+| Ollama API | http://localhost:11434 |
+
+Use the Grafana credentials configured in `.env`. Do not expose these services publicly without appropriate authentication, TLS, and network controls.
+
+### 6. Check service status and logs
+
+List all containers:
+
+```bash
+docker ps
+```
+
+Check Compose service status:
+
+```bash
+docker compose ps
+```
+
+Inspect logs from all Compose services:
+
+```bash
+docker compose logs --tail=100
+```
+
+Inspect specific services when troubleshooting:
+
+```bash
+docker compose logs --tail=100 buildsentry
+docker compose logs --tail=100 ollama
+```
+
+Use the service names reported by:
+
+```bash
+docker compose config --services
+```
+
+If a service is restarting or unhealthy, inspect its logs before assuming the entire stack is working.
+
+### 7. Optional NVIDIA GPU support
+
+CPU inference is the default. If your machine has a supported NVIDIA GPU and the NVIDIA Container Toolkit is installed and configured, you can try the GPU override:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  up --build -d
+```
+
+The GPU override requires a working NVIDIA Container Toolkit/runtime. GPU support is optional; the model can also run on CPU, although inference may be slower.
 
 ## Jenkins integration
 
-The library entrypoint is `jenkins-shared-library/vars/buildsentry.groovy`. Configure the library in Jenkins and use the example at `jenkins/BuildSentryRemediation.example.groovy` as a starting point, adapting build/test commands to your repository.
+The Shared Library entrypoint is:
 
-The library needs stage hooks at the point where the action can safely run:
+`jenkins-shared-library/vars/buildsentry.groovy`
+
+Configure a global Jenkins Shared Library named `BuildSentry` that points to this repository. Adapt `jenkins/BuildSentryRemediation.example.groovy` to your pipeline.
+
+Example stage hooks:
 
 ```groovy
 buildsentry(stage: 'checkout') // before checkout scm
@@ -162,67 +285,180 @@ buildsentry(stage: 'docker')   // before Docker build
 buildsentry(stage: 'registry') // before registry push
 ```
 
-A stage-bound action called from the wrong stage is not executed. The action marker is deliberately absent in that case, so BuildSentry will escalate even if the retry build later passes. For Docker cache recovery, the pipeline must use `BUILDSENTRY_DOCKER_NO_CACHE` to add `--no-cache` to the relevant build command. Registry pushes require your own Jenkins credentials and registry configuration; do not hard-code credentials in a Jenkinsfile.
+Place each hook at the stage where its corresponding recovery action can safely execute.
 
-The pipeline's `post { failure { ... } }` block should call `buildsentry()` to notify the backend. Configure the Jenkins Secret Text credential `autoheal-webhook-secret` to match `.env` `WEBHOOK_SECRET`. The backend accepts `X-BuildSentry-Secret` and the legacy `X-AutoHeal-Secret` header.
+A stage-bound action called from the wrong stage is not executed. BuildSentry escalates if the expected action marker is missing, even if a later retry passes.
 
-### Failure-injection validation
+For Docker cache recovery, the pipeline must consume `BUILDSENTRY_DOCKER_NO_CACHE` and actually invoke `docker build --no-cache`. Registry operations still require properly configured Jenkins credentials. Never hard-code credentials in a Jenkinsfile.
 
-Use a disposable Jenkins job/agent and a non-production registry. For each test, retain the original failed build, recovery build, BuildSentry incident/audit trail, and terminal result. Validate at least:
+The pipeline's `post { failure { ... } }` block should call `buildsentry()` to notify the backend.
 
-1. `DEPENDENCY_FAILURE`: remove a test dependency; confirm the dependency hook executes, action marker is written, and retry succeeds.
-2. `WORKSPACE_FAILURE`: inject a workspace-only fault; confirm cleanup occurs before checkout and retry succeeds.
-3. `NETWORK_FAILURE`: inject a controlled transient connectivity failure; confirm bounded check/backoff and retry.
-4. `DOCKER_FAILURE`: confirm the retry build consumes `BUILDSENTRY_DOCKER_NO_CACHE` and actually invokes `docker build --no-cache`.
-5. `CODE_FAILURE` and `UNKNOWN`: confirm no automatic recovery is triggered and the incident is escalated.
-6. Missing hook: allow the retry to pass without the expected hook; confirm the final result is `ACTION_NOT_CONFIRMED`, not `HEALED`.
-7. Authentication mismatch: confirm a bad webhook secret returns HTTP 401 and creates no incident.
+Configure the Jenkins Secret Text credential `autoheal-webhook-secret` to match `WEBHOOK_SECRET` in `.env`. The backend accepts the `X-BuildSentry-Secret` header and retains compatibility with the legacy `X-AutoHeal-Secret` header.
 
-Never report healing success from HTTP 202 alone. HTTP 202 only means the failure notification was accepted for asynchronous processing.
+### Validate recovery safely
 
-## Local tests
+Use a disposable Jenkins job/agent and a non-production registry. Preserve the original failed build, recovery build, incident/audit trail, and final result.
+
+1. **`DEPENDENCY_FAILURE`:** Introduce a controlled missing test dependency and verify the hook runs and the retry succeeds.
+2. **`WORKSPACE_FAILURE`:** Inject a workspace-only fault and verify cleanup occurs at the expected stage.
+3. **`NETWORK_FAILURE`:** Inject a controlled transient connectivity failure and verify bounded checks and backoff.
+4. **`DOCKER_FAILURE`:** Verify the retry actually consumes `BUILDSENTRY_DOCKER_NO_CACHE`.
+5. **`CODE_FAILURE` and `UNKNOWN`:** Verify unsupported failures are escalated rather than automatically repaired.
+6. **Missing action hook:** Verify a passing retry without the required action marker is not reported as healed.
+7. **Bad webhook secret:** Verify HTTP 401 and no incident creation.
+
+An HTTP 202 means the failure notification was accepted for asynchronous processing. It does not, by itself, mean the incident was healed.
+
+## Run tests locally
+
+Create a virtual environment:
 
 ```bash
 python -m venv .venv
-# Linux/macOS:
+```
+
+Activate it on Linux/macOS:
+
+```bash
 source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
+```
+
+On Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Install dependencies and run the tests:
+
+```bash
 python -m pip install -r requirements.txt
 python -m compileall -q app tests
 pytest -q
 ```
 
-The automated tests use an isolated SQLite database and mock external Jenkins calls. They do not replace a live Jenkins/Groovy/Docker/Prometheus/Alertmanager validation. With the checked-in test environment, the current suite passes **69 tests** in the local audit environment.
+Unit tests use an isolated SQLite database and mock external Jenkins/Ollama calls. They do not replace live Jenkins, Groovy, Docker, Prometheus, or Alertmanager integration testing.
 
 ## Observability
 
-- The API exports application metrics and traces through the OpenTelemetry Collector when `OTEL_ENABLED=true`.
-- Set `OTEL_ENABLED=false` for offline/local unit tests; this disables OTLP exporters and FastAPI request instrumentation.
-- Prometheus scrapes the Collector's metrics endpoint at `otel-collector:8889` and loads rules from `observability/prometheus/rules/`.
-- Grafana is provisioned with Prometheus, Tempo, and PostgreSQL data sources plus the dashboard JSON under `observability/grafana/dashboards/`.
-- Alertmanager authenticates to `/alerts/alertmanager` with the bearer secret stored in `.secrets/alertmanager_secret`.
-- `SLACK_WEBHOOK_URL` is optional. If unset, no Slack message is delivered; verify delivery in your own environment before relying on alerts.
+- OpenTelemetry exports metrics and traces when `OTEL_ENABLED=true`.
+- Prometheus scrapes the Collector metrics endpoint at `otel-collector:8889` and loads rules from `observability/prometheus/rules/`.
+- Grafana is provisioned with Prometheus, Tempo, and PostgreSQL data sources and dashboard JSON under `observability/grafana/dashboards/`.
+- Alertmanager calls `http://buildsentry:8000/alerts/alertmanager` with the bearer secret mounted at `/run/secrets/alertmanager_secret`.
+- `SLACK_WEBHOOK_URL` is optional. Verify alert delivery before relying on notifications.
 
-## Security notes
+In Prometheus, open **Status → Targets** and verify the Collector target is up. Check **Status → Rules** for loaded alert rules.
+
+A successful `docker compose config` only validates the Compose configuration. It does not prove that every service is healthy or that AI diagnostics are working.
+
+## Data persistence and cleanup
+
+BuildSentry uses Docker volumes to persist service data, including PostgreSQL records, Grafana data, and Ollama model files.
+
+List volumes:
+
+```bash
+docker volume ls
+```
+
+Inspect the volumes associated with the current Compose project:
+
+```bash
+docker compose config
+docker compose ps
+```
+
+Do not assume that volumes from an older project name are automatically reused. When changing Compose project or volume names, Docker may create new volumes, leaving older data in separate volumes.
+
+**Normal stop and restart:**
+
+```bash
+docker compose stop
+docker compose start
+```
+
+**Stop and remove containers without deleting named volumes:**
+
+```bash
+docker compose down
+```
+
+**Warning:** Avoid `docker compose down -v` unless you intentionally want to remove the project's named volumes. Removing volumes can permanently delete database records, Grafana state, and downloaded Ollama models.
+
+If you intentionally want a fresh Ollama model store, back up anything you need first, then remove only the verified Ollama volume and recreate the Ollama service. Do not remove the PostgreSQL or Grafana volumes just to reinstall a model.
+
+## Troubleshooting
+
+### Ollama is running, but `ollama list` is empty
+
+Download the model:
+
+```bash
+docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama list
+```
+
+### BuildSentry cannot connect to Ollama
+
+Check that the services are running:
+
+```bash
+docker compose ps
+docker compose logs --tail=100 ollama
+docker compose logs --tail=100 buildsentry
+```
+
+Confirm that `.env` contains:
+
+```dotenv
+AI_ENABLED=true
+OLLAMA_URL=http://ollama:11434
+OLLAMA_MODEL=llama3.2:3b
+```
+
+Inside the Compose network, use the Ollama service name and container port. `localhost:11434` inside the BuildSentry container refers to the BuildSentry container itself, not the Ollama container.
+
+### Grafana's AI diagnosis panel shows no data
+
+Check the following:
+
+1. Confirm that the model is installed with `ollama list`.
+2. Confirm `AI_ENABLED=true` and the correct model name.
+3. Inspect BuildSentry and Ollama logs for AI request failures.
+4. Trigger a new controlled Jenkins failure after fixing the problem.
+5. Refresh the dashboard and inspect the saved incident record.
+
+Previously recorded incidents are not necessarily reprocessed automatically after the model becomes available. Also, a dashboard query that filters out incidents with a null AI root cause may hide useful error details.
+
+### A container keeps restarting
+
+Inspect its logs:
+
+```bash
+docker compose logs --tail=100
+```
+
+Review the failing service's configuration and health status before restarting or deleting volumes. For example, a restarting Tempo service is an observability issue that should be investigated separately from Ollama model installation.
+
+## Security
 
 - Never commit `.env`, `.secrets/`, Jenkins API tokens, database passwords, or Slack webhook URLs.
-- The API and observability ports bind to `127.0.0.1` on the host by default. Do not expose them publicly without authentication, TLS, and network controls.
-- Rotate all credentials if they were ever committed or shared in logs/screenshots.
-- A Jenkins agent with Docker socket access effectively has privileged access to the Docker host. Use a disposable agent for experiments, not a shared production controller.
-- Log redaction is best-effort, not a guarantee that every possible secret format will be removed. Keep sensitive credentials out of console output.
-- Review Trivy findings rather than suppressing them just to obtain a green pipeline; vulnerability counts change with scanner databases and base images.
+- Application and observability ports should remain bound to localhost by default unless intentionally configured otherwise.
+- Do not expose internal services publicly without authentication, TLS, and network controls.
+- Rotate credentials that have been committed or exposed in logs/screenshots.
+- Jenkins agents with Docker socket access effectively have privileged access to the Docker host. Use disposable agents for recovery tests.
+- Log redaction is best-effort; avoid printing secrets in Jenkins logs.
+- Review Trivy findings. Do not suppress security scans just to obtain a green pipeline.
 
 ## Known limitations
 
-- FastAPI `BackgroundTasks` is in-process and not durable. A process crash after HTTP 202 can interrupt processing. A durable queue is a future reliability improvement, not implemented here.
-- The circuit breaker is in memory and resets on process restart; it is not a distributed lock.
-- The Jenkins action marker verifies that the Shared Library reached the post-action marker and the retry passed. It is not cryptographic proof of every side effect inside arbitrary user pipeline code; integration tests and restricted library/job permissions remain important.
-- The shared library only works when the correct stage hooks are installed and the Jenkins agent has the required tools and permissions.
-- A successful unit test run does not establish production readiness. Test the full stack and each recovery path in a disposable environment.
-
-## CI status
-
-This ZIP does not include a GitHub Actions workflow. Run the local test commands above before pushing. A CI workflow can be added later, but it should not be described as existing until it is checked into the repository and its run is green.
+- FastAPI background tasks run in-process and are not a durable queue. A process crash after HTTP 202 can interrupt processing.
+- The circuit breaker is in memory and resets when the API process restarts. It is not a distributed lock.
+- The action marker verifies that the Shared Library reached its marker and the retry passed. It is not cryptographic proof of every side effect inside arbitrary pipeline code.
+- The Shared Library requires correctly placed stage hooks and appropriate Jenkins agent tools/permissions.
+- AI evidence matching verifies that cited text occurs in the supplied excerpt; it cannot prove that the model's interpretation is correct. AI remains advisory and cannot authorize remediation.
+- A running Ollama container does not guarantee that the required model is installed or that inference will succeed.
+- Passing unit tests does not establish production readiness. Validate every recovery path in a disposable environment.
 
 ## License
 

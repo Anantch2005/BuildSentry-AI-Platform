@@ -1,174 +1,122 @@
-services:
+name: buildsentry
 
+services:
   postgres:
     image: postgres:16
-    container_name: autoheal-postgres
-
+    container_name: buildsentry-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
     ports:
       - "127.0.0.1:5432:5432"
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
-        ]
-
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
-
 
   ollama:
     image: ollama/ollama:latest
-    container_name: autoheal-ollama
-
+    container_name: buildsentry-ollama
     ports:
       - "127.0.0.1:11434:11434"
-
     volumes:
       - ollama_data:/root/.ollama
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
-
 
   tempo:
     image: grafana/tempo:latest
-    container_name: autoheal-tempo
-
-    command:
-      - "-config.file=/etc/tempo.yaml"
-
+    container_name: buildsentry-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./observability/tempo.yaml:/etc/tempo.yaml:ro
       - tempo_data:/data/tempo
-
     ports:
       - "127.0.0.1:3200:3200"
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
 
-
   otel-collector:
     image: otel/opentelemetry-collector:0.158.0
-    container_name: autoheal-otel
-
-    command:
-      - "--config=/etc/otelcol/config.yaml"
-
+    container_name: buildsentry-otel
+    command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./observability/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-
     ports:
       - "127.0.0.1:4317:4317"
       - "127.0.0.1:4318:4318"
       - "127.0.0.1:8889:8889"
-
     depends_on:
       tempo:
         condition: service_started
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
 
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: buildsentry-alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./.secrets/alertmanager_secret:/run/secrets/alertmanager_secret:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    depends_on:
+      buildsentry:
+        condition: service_started
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: autoheal-prometheus
-
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-
+    container_name: buildsentry-prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
-
     ports:
       - "127.0.0.1:9090:9090"
-
     depends_on:
       otel-collector:
         condition: service_started
       alertmanager:
         condition: service_started
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
-
-
-  alertmanager:
-    image: prom/alertmanager:latest
-    container_name: autoheal-alertmanager
-
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/alertmanager"
-
-    volumes:
-      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - ./.secrets/alertmanager_secret:/run/secrets/alertmanager_secret:ro
-      - alertmanager_data:/alertmanager
-
-    ports:
-      - "127.0.0.1:9093:9093"
-
-    depends_on:
-      autoheal:
-        condition: service_started
-
-    restart: unless-stopped
-
-    security_opt:
-      - no-new-privileges:true
-
 
   grafana:
     image: grafana/grafana:latest
-    container_name: autoheal-grafana
-
+    container_name: buildsentry-grafana
     ports:
       - "127.0.0.1:3000:3000"
-
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
-
       PG_HOST: postgres
       PG_PORT: "5432"
       PG_USER: ${POSTGRES_USER}
       PG_PASSWORD: ${POSTGRES_PASSWORD}
       PG_DATABASE: ${POSTGRES_DB}
-  
-
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-
     depends_on:
       postgres:
         condition: service_healthy
@@ -178,67 +126,44 @@ services:
         condition: service_started
       alertmanager:
         condition: service_started
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
 
-
-  autoheal:
+  buildsentry:
     build: .
-
-    container_name: autoheal
-
+    image: buildsentry:latest
+    container_name: buildsentry
     ports:
       - "127.0.0.1:8000:8000"
-
     env_file:
       - .env
-
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      OLLAMA_URL: ${OLLAMA_URL}
-      OTEL_ENDPOINT: ${OTEL_ENDPOINT}
-
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-http://otel-collector:4318}
     depends_on:
-
       postgres:
         condition: service_healthy
-
       ollama:
         condition: service_started
-
       otel-collector:
         condition: service_started
-
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
     restart: unless-stopped
-
     security_opt:
       - no-new-privileges:true
-
     cap_drop:
       - ALL
-
     read_only: true
-
     tmpfs:
       - /tmp
 
-
 volumes:
-
   postgres_data:
-
   ollama_data:
-
   prometheus_data:
-
   grafana_data:
-
   tempo_data:
-
   alertmanager_data:

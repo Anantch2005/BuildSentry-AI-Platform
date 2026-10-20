@@ -5,24 +5,17 @@ route:
   group_by:
     - alertname
     - service
-
   group_wait: 5s
   group_interval: 30s
   repeat_interval: 2h
-
-  receiver: autoheal-webhook
+  receiver: buildsentry-webhook
 
 receivers:
-
-  - name: autoheal-webhook
-
+  - name: buildsentry-webhook
     webhook_configs:
-
-      - url: "http://autoheal:8000/alerts/alertmanager"
-
+      - url: "http://buildsentry:8000/alerts/alertmanager"
         http_config:
           authorization:
             type: Bearer
             credentials_file: /run/secrets/alertmanager_secret
-
         send_resolved: true

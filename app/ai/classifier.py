@@ -1,25 +1,7 @@
+"""Focused Jenkins log extraction and local Ollama diagnostics.
 
+Ollama is advisory only. It never chooses remediation or policy.
 """
-Focused Jenkins failure-context extractor + Ollama diagnostic client.
-
-Architecture:
-
-    full Jenkins console
-        ├── deterministic BuildSentry classifier
-        ├── audit/persistence
-        └── focused evidence extractor -> Ollama
-
-Ollama is diagnostic only.
-
-It never selects:
-    - remediation
-    - retry
-    - policy decisions
-    - source-code changes
-    - dependency changes
-    - infrastructure changes
-"""
-
 from __future__ import annotations
 
 import json
@@ -37,15 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class AIClassifier(FailureContextExtractor):
-    """
-    Local Ollama diagnostic assistant.
-
-    The complete Jenkins console may be passed into this class,
-    but only focused failure evidence is sent to Ollama.
-    """
+    """Send a bounded, redacted Jenkins failure excerpt to Ollama."""
 
     def __init__(self) -> None:
-
         self.enabled = settings.ai_enabled
         self.ollama_url = settings.ollama_url.rstrip("/")
         self.model = settings.ollama_model
@@ -55,62 +31,39 @@ class AIClassifier(FailureContextExtractor):
         self.max_stage_chars = settings.ai_stage_max_chars
         self.max_failure_candidates = settings.ai_max_failure_candidates
 
-    # =============================================================
-    # PUBLIC API
-    # =============================================================
-
     async def classify(
-        self,
-        log: str,
-        rules_category: str | None = None,
+        self, log: str, rules_category: str | None = None
     ) -> AIClassification:
-
         if not self.enabled:
-
-            raise RuntimeError(
-                "AI analysis is disabled."
-            )
+            raise RuntimeError("AI analysis is disabled.")
 
         original_log = log or ""
-
         if not original_log.strip():
+            raise RuntimeError("Jenkins console log is empty.")
 
-            raise RuntimeError(
-                "Jenkins console log is empty."
-            )
-
-        # IMPORTANT:
-        #
-        # The complete Jenkins console enters this method.
-        #
-        # The complete console is NEVER placed directly into
-        # the Ollama prompt.
-        prepared_log = self._prepare_log(
+        # Process the full console locally; only this focused excerpt reaches Ollama.
+        excerpt = self._prepare_log(
             original_log,
             rules_category=rules_category,
         )
-
-        user_prompt = build_user_prompt(
-            log=prepared_log,
+        prompt = build_user_prompt(
+            excerpt,
             rules_category=rules_category,
         )
 
         logger.info(
-            "Preparing Ollama diagnostic request: model=%s original_log_chars=%d "
-            "focused_context_chars=%d rules_category=%s failure_candidates=%d",
+            "Preparing Ollama diagnosis: model=%s original_chars=%d "
+            "excerpt_chars=%d category=%s",
             self.model,
             len(original_log),
-            len(prepared_log),
+            len(excerpt),
             rules_category or "UNKNOWN",
-            self._count_failure_lines(prepared_log),
         )
-        # Never log the raw or redacted prompt: console output may still contain
-        # proprietary code, tokens, URLs, usernames, or internal hostnames.
 
         payload = {
             "model": self.model,
             "system": SYSTEM_PROMPT,
-            "prompt": user_prompt,
+            "prompt": prompt,
             "stream": False,
             "format": "json",
             "options": {
@@ -120,34 +73,24 @@ class AIClassifier(FailureContextExtractor):
             },
         }
 
-        endpoint = (
-            f"{self.ollama_url}/api/generate"
-        )
-
         try:
-
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(
                     self.timeout_seconds,
                     connect=10.0,
                 )
             ) as client:
-
                 response = await client.post(
-                    endpoint,
+                    f"{self.ollama_url}/api/generate",
                     json=payload,
                 )
-
                 response.raise_for_status()
-
         except httpx.HTTPError as exc:
-
             raise RuntimeError(
                 f"Ollama request failed: {exc}"
             ) from exc
 
         body = response.json()
-
         raw_response = (
             body.get("response")
             if isinstance(body, dict)
@@ -155,286 +98,185 @@ class AIClassifier(FailureContextExtractor):
         )
 
         if not raw_response:
+            raise RuntimeError("Ollama returned an empty response.")
 
-            raise RuntimeError(
-                "Ollama returned an empty response."
+        result = self._parse_response(raw_response)
+
+        # Require at least one quotation from the excerpt actually sent to
+        # Ollama. This validates the quote, not the semantic correctness of
+        # the model's interpretation.
+        normalized_excerpt = self._normalise_for_compare(
+            excerpt
+        ).casefold()
+
+        supported_evidence = [
+            item
+            for item in result.matched_evidence
+            if (
+                self._normalise_for_compare(item).casefold()
+                and self._normalise_for_compare(item).casefold()
+                in normalized_excerpt
+            )
+        ]
+
+        if not supported_evidence:
+            logger.warning(
+                "Ollama returned no evidence matching the supplied excerpt; "
+                "diagnosis is unverified."
+            )
+            return AIClassification(
+                category="unverified_diagnosis",
+                root_cause=(
+                    "The AI could not provide a root cause supported by "
+                    "an exact log excerpt."
+                ),
+                reasoning=(
+                    "The model's cited evidence did not match the targeted "
+                    "Jenkins logs. The root cause is unverified; inspect "
+                    "the failed stage's original console output."
+                ),
+                confidence=0.0,
+                matched_evidence=[],
+                recommendations=[
+                    "Inspect the error lines in the failed Jenkins stage.",
+                    (
+                        "Check the first concrete error before the generic "
+                        "exit-code message."
+                    ),
+                ],
             )
 
-        return self._parse_response(
-            raw_response
+        # A diagnosis that explicitly admits uncertainty must not retain a
+        # high numeric confidence. This keeps Grafana's confidence aligned
+        # with the written explanation.
+        uncertainty_text = (
+            f"{result.root_cause} {result.reasoning}"
+        ).casefold()
+
+        uncertainty_markers = (
+            "unverified",
+            "not established",
+            "not specified",
+            "cannot determine",
+            "can't determine",
+            "could not determine",
+            "couldn't determine",
+            "insufficient evidence",
+            "not enough evidence",
+            "unclear",
+            "does not show a clear root cause",
+            "cause is not specified",
+            "cannot be determined",
+            "not enough information",
+            "not clear",
+            "unknown cause",
         )
 
-    # =============================================================
-    # OLLAMA RESPONSE PARSING
-    # =============================================================
+        confidence = result.confidence
+        if any(
+            marker in uncertainty_text
+            for marker in uncertainty_markers
+        ):
+            confidence = min(confidence, 0.35)
+
+        return result.model_copy(
+            update={
+                "matched_evidence": supported_evidence,
+                "confidence": confidence,
+            }
+        )
 
     def _parse_response(
         self,
         raw_response: str,
     ) -> AIClassification:
-
         try:
-
-            data = json.loads(
-                raw_response
-            )
-
+            data = json.loads(raw_response)
         except json.JSONDecodeError as exc:
-
-            data = (
-                self._extract_json_object(
-                    raw_response
-                )
-            )
-
+            data = self._extract_json_object(raw_response)
             if data is None:
-
                 raise RuntimeError(
-                    "Ollama returned invalid JSON: "
-                    f"{exc}"
+                    f"Ollama returned invalid JSON: {exc}"
                 ) from exc
 
-        if not isinstance(
-            data,
-            dict,
-        ):
-
+        if not isinstance(data, dict):
             raise RuntimeError(
-                "Ollama JSON response "
-                "was not an object."
+                "Ollama JSON response was not an object."
             )
-
-        category = (
-            self._clean_string(
-                data.get(
-                    "category",
-                    "unknown",
-                )
-            )
-            or "unknown"
-        )
-
-        root_cause = (
-            self._clean_string(
-                data.get(
-                    "root_cause",
-                    "",
-                )
-            )
-        )
-
-        reasoning = (
-            self._clean_string(
-                data.get(
-                    "reasoning",
-                    "",
-                )
-            )
-        )
-
-        confidence = (
-            self._normalize_confidence(
-                data.get(
-                    "confidence",
-                    0.0,
-                )
-            )
-        )
-
-        matched_evidence = (
-            self._normalize_list(
-                data.get(
-                    "matched_evidence",
-                    [],
-                )
-            )
-        )
-
-        recommendations = (
-            self._normalize_list(
-                data.get(
-                    "recommendations",
-                    [],
-                )
-            )
-        )
 
         return AIClassification(
-            category=category,
+            category=(
+                self._clean_string(
+                    data.get("category", "unknown")
+                )
+                or "unknown"
+            ),
             root_cause=(
-                root_cause
-                or
-                "The AI did not provide "
-                "a root cause."
+                self._clean_string(data.get("root_cause", ""))
+                or "The AI did not provide a root cause."
             ),
             reasoning=(
-                reasoning
-                or
-                "The AI did not provide "
-                "additional reasoning."
+                self._clean_string(data.get("reasoning", ""))
+                or "The AI did not provide additional reasoning."
             ),
-            confidence=confidence,
-            matched_evidence=matched_evidence,
-            recommendations=recommendations,
+            confidence=self._normalize_confidence(
+                data.get("confidence", 0.0)
+            ),
+            matched_evidence=self._normalize_list(
+                data.get("matched_evidence", [])
+            ),
+            recommendations=self._normalize_list(
+                data.get("recommendations", [])
+            ),
         )
-
-    # =============================================================
-    # JSON EXTRACTION
-    # =============================================================
 
     @staticmethod
     def _extract_json_object(
         text: str,
     ) -> dict[str, Any] | None:
+        start = text.find("{")
+        end = text.rfind("}")
 
-        start = text.find(
-            "{"
-        )
-
-        end = text.rfind(
-            "}"
-        )
-
-        if (
-            start < 0
-            or end <= start
-        ):
-
+        if start < 0 or end <= start:
             return None
 
         try:
-
-            value = json.loads(
-                text[
-                    start:end + 1
-                ]
-            )
-
+            value = json.loads(text[start:end + 1])
         except json.JSONDecodeError:
-
             return None
 
-        if isinstance(
-            value,
-            dict,
-        ):
-
-            return value
-
-        return None
-
-    # =============================================================
-    # STRING NORMALIZATION
-    # =============================================================
+        return value if isinstance(value, dict) else None
 
     @staticmethod
-    def _clean_string(
-        value: Any,
-    ) -> str:
-
+    def _clean_string(value: Any) -> str:
         if value is None:
-
             return ""
-
-        if isinstance(
-            value,
-            str,
-        ):
-
+        if isinstance(value, str):
             return value.strip()
-
-        return str(
-            value
-        ).strip()
-
-    # =============================================================
-    # LIST NORMALIZATION
-    # =============================================================
+        return str(value).strip()
 
     @staticmethod
-    def _normalize_list(
-        value: Any,
-    ) -> list[str]:
-
+    def _normalize_list(value: Any) -> list[str]:
         if value is None:
-
             return []
+        if isinstance(value, str) or not isinstance(value, list):
+            value = [value]
 
-        if isinstance(
-            value,
-            str,
-        ):
-
-            value = [
-                value
-            ]
-
-        if not isinstance(
-            value,
-            list,
-        ):
-
-            value = [
-                value
-            ]
-
-        result: list[str] = []
-
-        for item in value:
-
-            if item is None:
-
-                continue
-
-            text = str(
-                item
-            ).strip()
-
-            if text:
-
-                result.append(
-                    text
-                )
-
-        return result[:10]
-
-    # =============================================================
-    # CONFIDENCE NORMALIZATION
-    # =============================================================
+        return [
+            str(item).strip()
+            for item in value
+            if item is not None and str(item).strip()
+        ][:10]
 
     @staticmethod
-    def _normalize_confidence(
-        value: Any,
-    ) -> float:
-
+    def _normalize_confidence(value: Any) -> float:
         try:
-
-            confidence = float(
-                value
-            )
-
-        except (
-            TypeError,
-            ValueError,
-        ):
-
+            confidence = float(value)
+        except (TypeError, ValueError):
             return 0.0
 
-        # Models sometimes return:
-        #
-        # 90
-        #
-        # instead of:
-        #
-        # 0.90
+        # Some models return 90 instead of 0.90.
         if confidence > 1.0:
-
             confidence /= 100.0
 
-        return max(
-            0.0,
-            min(
-                1.0,
-                confidence,
-            ),
-        )
+        return max(0.0, min(1.0, confidence))
