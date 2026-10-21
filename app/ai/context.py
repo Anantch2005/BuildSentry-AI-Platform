@@ -160,6 +160,9 @@ class FailureContextExtractor:
             "npm ERR!",
             "ERESOLVE",
             "Could not resolve dependencies",
+            "No module named",
+            "ModuleNotFoundError",
+            "ImportError",
         ),
         "DOCKER_FAILURE": (
             "failed to solve:",
@@ -227,7 +230,10 @@ class FailureContextExtractor:
         candidates = [
             index
             for index, line in enumerate(lines)
-            if self._is_failure_line(line, rules_category)
+            if (
+                self._is_failure_line(line, rules_category)
+                and not self._is_skipped_stage_line(line)
+            )
         ]
 
         candidates = candidates[-self.max_failure_candidates:]
@@ -340,6 +346,12 @@ class FailureContextExtractor:
             lower = text.lower()
             score = 0
 
+            # Declarative Pipeline often prints a skipped stage as a failure
+            # message. It is a consequence of an earlier failure, not evidence
+            # of the root cause, so never let it outrank the original error.
+            if self._is_skipped_stage_line(text):
+                score -= 1000
+
             for signal in signals:
                 if signal.lower() in lower:
                     score += 8
@@ -365,6 +377,8 @@ class FailureContextExtractor:
                 "modulenotfounderror",
                 "no matching distribution",
                 "could not find a version",
+                "no module named",
+                "modulenotfounderror",
                 "resolutionimpossible",
                 "failed to solve:",
                 "cannot connect to the docker daemon",
@@ -402,8 +416,10 @@ class FailureContextExtractor:
             if lower.startswith("[pipeline]"):
                 score -= 10
 
-            # Prefer the later occurrence when scores are equal.
-            if score >= best_score:
+            # Keep the first occurrence when scores are equal. In build logs,
+            # the first concrete error is usually causal; later wrappers and
+            # skipped-stage notices are downstream symptoms.
+            if score > best_score:
                 best_score = score
                 best_index = index
 
@@ -483,6 +499,21 @@ class FailureContextExtractor:
         end = min(len(lines), index + radius + 1)
         return "\n".join(lines[start:end])
 
+    @staticmethod
+    def _is_skipped_stage_line(line: str) -> bool:
+        """Return True for pipeline notices that describe a skipped stage."""
+        lower = (line or "").strip().casefold()
+        return bool(
+            re.search(
+                r"\b(?:stage\s+[^\n]*\s+)?skipped\s+due\s+to\s+earlier\s+failure",
+                lower,
+            )
+            or re.search(
+                r"\bno\s+stages?\s+executed\b",
+                lower,
+            )
+        )
+
     def _is_failure_line(
         self,
         line: str,
@@ -498,10 +529,17 @@ class FailureContextExtractor:
             (),
         )
 
-        # Known categories use their signatures plus generic errors. For
-        # UNKNOWN, use the broad tool-agnostic list.
-        signals = category_signals or self.FAILURE_SIGNALS
+        # Always retain generic failure signatures as well as category-specific
+        # ones. A deterministic category can be correct while its particular
+        # signature list omits the concrete error (for example, "No module
+        # named pytest" for DEPENDENCY_FAILURE).
+        signals = tuple(dict.fromkeys(
+            (*self.FAILURE_SIGNALS, *category_signals)
+        ))
         lower = text.lower()
+
+        if self._is_skipped_stage_line(text):
+            return False
 
         if any(signal.lower() in lower for signal in signals):
             return True
@@ -531,11 +569,11 @@ class FailureContextExtractor:
     def _redact_secrets(self, text: str) -> str:
         patterns = (
             (
-                r"(?i)(Authorization:\s*Bearer\s+)",
+                r"(?i)(Authorization:\s*Bearer\s+)[^\s,;]+",
                 r"\1[REDACTED]",
             ),
             (
-                r"(?i)(Authorization:\s*Basic\s+)",
+                r"(?i)(Authorization:\s*Basic\s+)[^\s,;]+",
                 r"\1[REDACTED]",
             ),
             (

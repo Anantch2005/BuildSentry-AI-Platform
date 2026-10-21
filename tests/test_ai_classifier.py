@@ -533,3 +533,143 @@ def test_ai_extracts_failed_stage_with_jenkins_timestamps():
     assert "Failed Jenkins stage: Test" in prepared
     assert "No module named pytest" in prepared
     assert "docker build ." not in prepared
+
+def test_dependency_failure_context_prefers_test_error_over_skipped_stage():
+    """A skipped downstream stage must not become the primary AI evidence."""
+    classifier = AIClassifier()
+    log = """[Pipeline] Start of Pipeline
+[Pipeline] { (Checkout)
+checkout scm
+[Pipeline] }
+[Pipeline] { (Test)
+AutoHeal demo: injecting dependency failure.
+AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed
+script returned exit code 1
+[Pipeline] }
+[Pipeline] { (Docker Build)
+Stage \"Docker Build\" skipped due to earlier failure(s)
+[Pipeline] }
+"""
+
+    excerpt = classifier._prepare_log(
+        log,
+        rules_category="DEPENDENCY_FAILURE",
+    )
+
+    assert "Failed Jenkins stage: Test" in excerpt
+    assert "AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed" in excerpt
+    assert "skipped due to earlier failure" not in excerpt
+
+
+@pytest.mark.asyncio
+async def test_ai_retries_once_when_ollama_quotes_unmatched_evidence(monkeypatch):
+    """A paraphrased quote gets one correction attempt, not a false diagnosis."""
+    responses = [
+        {
+            "response": json.dumps({
+                "category": "dependency_failure",
+                "root_cause": "The dependencies failed to resolve.",
+                "reasoning": "The log indicates a dependency failure.",
+                "confidence": 0.8,
+                "matched_evidence": ["The dependencies failed to resolve."],
+                "recommendations": ["Inspect dependency resolution."],
+            })
+        },
+        {
+            "response": json.dumps({
+                "category": "dependency_failure",
+                "root_cause": "The demo deliberately injected a dependency failure.",
+                "reasoning": "The exact injected failure marker is present in the Test stage.",
+                "confidence": 0.8,
+                "matched_evidence": [
+                    "AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed"
+                ],
+                "recommendations": ["Inspect the dependency installation step in the Test stage."],
+            })
+        },
+    ]
+    calls = []
+
+    class SequenceClient(FakeAsyncClient):
+        async def post(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(responses.pop(0))
+
+    monkeypatch.setattr(
+        "app.ai.classifier.httpx.AsyncClient",
+        lambda *args, **kwargs: SequenceClient(None),
+    )
+
+    classifier = AIClassifier()
+    classifier.enabled = True
+    log = """[Pipeline] { (Test)
+AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed
+script returned exit code 1
+[Pipeline] }
+[Pipeline] { (Docker Build)
+Stage \"Docker Build\" skipped due to earlier failure(s)
+[Pipeline] }
+"""
+
+    result = await classifier.classify(
+        log,
+        rules_category="DEPENDENCY_FAILURE",
+    )
+
+    assert len(calls) == 2
+    assert result.confidence == 0.8
+    assert result.matched_evidence == [
+        "AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed"
+    ]
+    assert "dependency failure" in result.root_cause.lower()
+    assert "exact excerpt" in calls[1][1]["json"]["prompt"]
+
+
+def test_dependency_context_keeps_original_failure_not_skipped_stage():
+    classifier = AIClassifier()
+    log = """\
+[Pipeline] Start of Pipeline
+[Pipeline] { (Test)
+[Pipeline] sh
+Demo: removing pytest packages to create a real dependency failure.
++ .venv/bin/python -m pytest -q
+/venv/bin/python: No module named pytest
+script returned exit code 1
+[Pipeline] }
+[Pipeline] { (Docker Build)
+Stage \"Docker Build\" skipped due to earlier failure(s)
+[Pipeline] End of Pipeline
+"""
+    excerpt = classifier._prepare_log(log, rules_category="DEPENDENCY_FAILURE")
+    assert "Failed Jenkins stage: Test" in excerpt
+    assert "No module named pytest" in excerpt
+    assert "skipped due to earlier failure" not in excerpt
+
+
+def test_dependency_fallback_identifies_synthetic_marker_honestly():
+    result = AIClassifier._deterministic_evidence_fallback(
+        "Failed Jenkins stage: Test\n"
+        "AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed\n"
+        "script returned exit code 1",
+        rules_category="DEPENDENCY_FAILURE",
+    )
+    assert result is not None
+    assert result.category == "synthetic_dependency_failure_injection"
+    assert "not a real package-resolution error" in result.root_cause
+    assert result.matched_evidence == [
+        "AUTOHEAL_DEPENDENCY_FAILURE: dependency resolution failed"
+    ]
+
+
+def test_dependency_fallback_identifies_missing_python_module():
+    result = AIClassifier._deterministic_evidence_fallback(
+        "Failed Jenkins stage: Test\n"
+        "/venv/bin/python: No module named pytest",
+        rules_category="DEPENDENCY_FAILURE",
+    )
+    assert result is not None
+    assert result.category == "missing_python_module"
+    assert "pytest" in result.root_cause
+    assert result.matched_evidence == [
+        "/venv/bin/python: No module named pytest"
+    ]
