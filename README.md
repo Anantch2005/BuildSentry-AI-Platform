@@ -1,59 +1,251 @@
-# BuildSentry — Guarded CI/CD Recovery and AI Diagnostics
+# BuildSentry — Guarded CI/CD Recovery for Jenkins
 
-BuildSentry is a Jenkins incident-response platform that classifies failed builds, applies deterministic safety policies, optionally uses a local Ollama model to explain log evidence, and records the incident lifecycle for auditing and observability.
+<p align="center">
+  <strong>Rules classify. AI diagnoses. Policy controls. Recovery executes. Verification decides.</strong>
+</p>
 
-## Features
+<p align="center">
+  An AI-assisted incident-response platform that helps Jenkins pipelines diagnose failures, perform policy-approved recovery, and verify outcomes.
+</p>
 
-- Authenticated Jenkins failure notifications.
-- Jenkins build metadata and console-log collection.
-- Deterministic failure classification.
-- Bounded, redacted, stage-focused evidence sent to local Ollama.
-- Validation that AI evidence quotations occur in the supplied excerpt.
-- Confidence limits when the AI cannot establish a clear root cause.
-- Separate policy evaluation, guarded remediation, and recovery verification.
-- PostgreSQL incident history and audit records.
-- Prometheus metrics, Grafana dashboards, OpenTelemetry traces, Tempo, and authenticated Alertmanager notifications.
+<p align="center">
+  <a href="https://github.com/Anantch2005/BuildSentry-AI-Platform">Repository</a> ·
+  <a href="https://github.com/Anantch2005/BuildSentry-AI-Platform/issues">Issues</a>
+</p>
+
+---
+
+## Overview
+
+CI/CD failures are not always straightforward. A single dependency error can cause several downstream stages to be skipped. A transient network failure may succeed on retry, while a code defect requires investigation rather than another build. Engineers must interpret logs, decide whether recovery is safe, execute the appropriate action, and verify the result.
+
+**BuildSentry is designed to bring these steps into one guarded incident-response workflow for Jenkins.**
+
+When a pipeline fails, BuildSentry collects build metadata and console logs, classifies the failure using deterministic rules, and optionally uses a locally hosted Ollama model to explain the available evidence. An independent policy engine determines whether a supported recovery action is permitted. The Jenkins Shared Library executes the approved action at the appropriate pipeline stage, and BuildSentry verifies the retry outcome before recording the result.
+
+The incident lifecycle is stored in PostgreSQL and exposed through an observability stack built around OpenTelemetry, Prometheus, Grafana, Tempo, and Alertmanager.
+
+BuildSentry does not give an LLM unrestricted control over Jenkins. **AI provides diagnostic assistance; deterministic rules and policy remain responsible for recovery decisions.**
+
+> **Project status:** Active engineering project. The implementation includes automated tests and a local Docker Compose environment. Production deployment requires controlled integration testing, security review, and validation of every supported recovery path.
+
+## Why BuildSentry?
+
+Traditional CI/CD pipelines can tell you that a build failed, but responding to the failure often requires manual investigation and repeated trial and error.
+
+BuildSentry addresses several parts of that workflow:
+
+- **Failure visibility:** Collects Jenkins build metadata and console output so the incident can be investigated centrally.
+- **Consistent classification:** Uses explicit rules to classify supported failure categories rather than relying on an LLM to make the operational decision.
+- **Evidence-based diagnosis:** Extracts a bounded, stage-focused log excerpt and uses local AI to help explain the observed failure.
+- **Controlled recovery:** Evaluates the failure against a separate policy and allowlist before requesting a supported remediation.
+- **Verified retry outcomes:** Checks the recovery marker and final Jenkins build result rather than treating a successful API request as proof of recovery.
+- **Incident history:** Stores incident, remediation, and audit information for later investigation.
+- **Operational observability:** Provides metrics, dashboards, traces, and alerting to help engineers understand how the system behaves.
+
+The goal is to reduce avoidable manual work and make recovery more consistent, explainable, and auditable—not to promise automatic repair of every possible pipeline failure.
 
 ## Architecture
 
 ```text
-Jenkins failed build
-        |
-        v
-Authenticated BuildSentry webhook
-        |
-        v
-Collect build metadata and console logs
-        |
-        +-----------------------+
-        |                       |
-        v                       v
-Deterministic rules       Focused log extractor
-        |                       |
-        v                       v
-Policy Engine             Local Ollama diagnosis
-        |                       |
-        +------------+----------+
-                     |
-                     v
-      Guarded remediation or escalation
-                     |
-                     v
-       Verification and PostgreSQL audit
-                     |
-                     v
-    Prometheus / Grafana / Tempo / alerts
+                    JENKINS CI/CD
+                          |
+                    Pipeline failure
+                          |
+                          v
+               Authenticated webhook
+                          |
+                          v
+               BUILDSENTRY BACKEND
+                    (FastAPI)
+                          |
+                  Jenkins Collector
+                          |
+              Build metadata + console log
+                          |
+             +------------+-------------+
+             |                          |
+             v                          v
+     Deterministic Rules          AI Evidence Pipeline
+     Failure Classification      Focused Log Extraction
+             |                    Redaction + Validation
+             |                          |
+             |                          v
+             |                    Local Ollama
+             |                    Advisory Diagnosis
+             |                          |
+             +-------------+------------+
+                           |
+                           v
+                     Policy Engine
+                  Allowlist + Safety Rules
+                           |
+                 +---------+---------+
+                 |                   |
+                 v                   v
+          Approved Recovery      Escalation
+                 |
+                 v
+         Remediation Executor
+                 |
+                 v
+       Jenkins Shared Library
+          Recovery Action
+                 |
+                 v
+          Retry Build
+                 |
+                 v
+       Marker + Result Verification
+                 |
+                 v
+          PostgreSQL Audit
+                 |
+                 v
+      OpenTelemetry / Prometheus
+        Grafana / Tempo / Alerts
 ```
+
+### End-to-end workflow
+
+1. **Detect:** Jenkins reports a failed build to the authenticated BuildSentry webhook.
+2. **Collect:** The backend fetches build metadata and console output through the Jenkins REST API.
+3. **Classify:** Deterministic rules select the failure category and proposed action.
+4. **Diagnose:** The AI pipeline prepares focused evidence and optionally asks local Ollama for an advisory explanation.
+5. **Evaluate:** The policy engine determines whether the proposed recovery is allowed and applies the configured attempt limits.
+6. **Recover or escalate:** An approved action is passed to the Jenkins Shared Library. Unsupported or unsafe failures are escalated instead of receiving unrestricted automated repair.
+7. **Verify:** BuildSentry checks the recovery action marker and retry result.
+8. **Record and observe:** Incident data and outcomes are persisted, while telemetry supports dashboards and alerts.
+
+## Core engineering principles
+
+### 1. Deterministic classification
+
+BuildSentry uses explicit Python rules to recognize supported failure signatures. The classifier proposes a category and associated action; the policy engine separately determines whether that action is permitted.
+
+This separation makes operational behavior easier to inspect, test, and constrain. It also avoids making an LLM's free-form response the authority for automated recovery.
+
+### 2. Local AI for privacy-conscious diagnosis
+
+BuildSentry integrates Ollama so diagnostic inference can run locally instead of requiring a hosted LLM API.
+
+This is an intentional architecture choice for a system that processes CI/CD logs, which may contain internal paths, package information, infrastructure details, or accidentally exposed credentials.
+
+The AI context pipeline is designed to:
+
+- Select a focused excerpt instead of sending an unnecessarily large console log.
+- Apply best-effort secret redaction.
+- Ask the model for a diagnosis supported by the available evidence.
+- Validate cited quotations against the supplied excerpt.
+- Preserve an unverified result when the evidence cannot be validated.
+
+Local inference can reduce external data exposure, but it does not guarantee complete privacy. Jenkins, the BuildSentry backend, logs, storage, and model runtime must still be secured.
+
+### 3. AI cannot authorize remediation
+
+The model is advisory only. It does not independently select arbitrary shell commands, bypass policy, or authorize privileged recovery.
+
+The deterministic classifier and policy engine control the operational path. This reduces the risk of a plausible but incorrect AI diagnosis directly triggering an unsafe action.
+
+### 4. Guarded, bounded recovery
+
+Supported recovery operations are explicitly implemented. Retry limits and safety checks help constrain automated behavior.
+
+BuildSentry is not designed to silently rewrite application code, modify dependency versions, fix invalid registry credentials, or perform unrestricted infrastructure administration.
+
+When a failure is unsupported or unsafe to repair automatically, escalation is the intended behavior.
+
+### 5. Verify the outcome, not just the action
+
+A remediation request can succeed while the pipeline remains broken. A retry can also pass without the expected recovery action having executed.
+
+BuildSentry therefore uses a recovery marker and the retry build result as verification signals. If the required marker is absent or the retry fails, the system should not classify the recovery as verified merely because the action was requested.
+
+These signals provide operational verification; they are not cryptographic proof that every side effect in arbitrary pipeline code occurred.
+
+### 6. Observability and auditability
+
+Incident response should itself be observable.
+
+BuildSentry combines PostgreSQL persistence with metrics, traces, dashboards, and alerting so engineers can investigate incident categories, remediation attempts, processing time, and recorded outcomes.
+
+---
+
+## Supported failure handling
+
+The repository contains deterministic rules and policy entries for the following failure categories. Detection and recovery depend on the actual error signatures and correct Jenkins integration.
+
+| Failure category | Intended handling | Safety boundary |
+|---|---|---|
+| `FLAKY_TEST` | One controlled retry | Does not change application or test code. |
+| `NETWORK_FAILURE` | Connectivity check, backoff, and retry | Does not repair persistent network infrastructure problems. |
+| `WORKSPACE_FAILURE` | Scoped workspace cleanup and fresh checkout | Requires the correct checkout-stage hook and agent permissions. |
+| `DEPENDENCY_FAILURE` | Rebuild the supported dependency environment and retry | Uses existing manifests; does not intentionally change dependency versions. |
+| `DOCKER_FAILURE` | Scoped Docker cache-bypass recovery | The Jenkinsfile must actually consume the no-cache flag. |
+| `REGISTRY_FAILURE` | One controlled retry for potentially transient errors | Does not fix invalid credentials or missing permissions. |
+| `CODE_FAILURE` | Do not automatically heal; investigate | Application and test code require human review. |
+| `REGISTRY_AUTH_FAILURE` | Escalate | Credential and permission problems require review. |
+| `DOCKER_DAEMON_FAILURE` | Escalate | Cache bypass cannot repair an unavailable daemon. |
+| `DISK_FULL` | Escalate | Privileged agent-wide cleanup is not implemented. |
+| `OOM` | Escalate | Resource resizing or agent replacement is not implemented. |
+| `AGENT_FAILURE` | Escalate | Privileged agent recovery is not implemented. |
+| `UNKNOWN` | Escalate | Requires investigation rather than speculative remediation. |
+
+The presence of a rule does not guarantee that every variation of a failure will be recognized. Test real console output from the target pipeline before relying on automated handling.
 
 ## Technology stack
 
-- Python 3.12, FastAPI, Pydantic Settings
-- Jenkins REST API and Jenkins Shared Library (Groovy)
-- PostgreSQL and SQLAlchemy
-- Ollama for optional local AI diagnostics
-- Docker Engine and Docker Compose
-- OpenTelemetry Collector, Prometheus, Grafana, Tempo, Alertmanager
-- pytest and pytest-asyncio
+| Area | Technologies |
+|---|---|
+| Backend API | Python 3.12, FastAPI, Pydantic Settings |
+| CI/CD integration | Jenkins REST API, Jenkins Shared Library (Groovy) |
+| Classification | Deterministic Python rules |
+| AI diagnosis | Ollama, locally hosted language model |
+| Persistence | PostgreSQL, SQLAlchemy |
+| Runtime | Docker Engine, Docker Compose v2 |
+| Metrics and alerts | Prometheus, Alertmanager |
+| Tracing and telemetry | OpenTelemetry, Tempo |
+| Dashboards | Grafana |
+| Testing | pytest, pytest-asyncio, mocked external services |
+
+## Repository structure
+
+```text
+.
+├── app/
+│   ├── ai/                 # AI client, prompts, evidence selection and validation
+│   ├── api/                # Jenkins webhook and Alertmanager endpoint
+│   ├── classifier/         # Deterministic failure rules
+│   ├── collectors/         # Jenkins build metadata and console logs
+│   ├── database/           # SQLAlchemy models, connection and repository
+│   ├── observability/      # Metrics and tracing instrumentation
+│   ├── policy/             # Policy decisions and recovery allowlist
+│   ├── remediation/        # Recovery plans and Jenkins retry coordination
+│   ├── safety/             # Circuit breaker
+│   ├── services/           # Incident orchestration and reporting
+│   ├── config.py           # Environment-based configuration
+│   ├── main.py             # FastAPI application and health endpoint
+│   └── models.py           # Shared domain and request models
+├── jenkins-shared-library/
+│   └── vars/
+│       └── buildsentry.groovy
+├── jenkins/
+│   └── BuildSentryRemediation.example.groovy
+├── observability/
+│   ├── alertmanager/
+│   ├── grafana/
+│   ├── prometheus/
+│   ├── otel-collector-config.yaml
+│   └── tempo.yaml
+├── scripts/
+│   └── setup-local-secrets.py
+├── tests/
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.gpu.yml
+├── requirements.txt
+└── .env.example
+```
 
 ## Requirements
 
